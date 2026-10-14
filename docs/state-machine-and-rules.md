@@ -54,15 +54,18 @@ Aşağıdaki tablo, durumlar arası geçiş koşullarını, tetikleyici mekanizm
 | Kaynak Durum ($S_{from}$) | Hedef Durum ($S_{to}$) | Tetikleyici ($Trigger$) | Guard Conditions (Ön Koşullar) | Cooldown / Gecikme |
 | :--- | :--- | :--- | :--- | :--- |
 | **[*]** | **ACTIVATE** | Event: `StudentEnrolledEvent` | Paket aktif, baseline aktivite yok | Yok (Başlangıç) |
-| **ACTIVATE** | **STEADY** | Event: `MilestoneCompletedEvent` | **"Aha! Moment":** İlk video ($\ge \%80$ izleme) **VEYA** ilk test ($\ge 5$ soru) tamamlandı | Anında |
-| **ACTIVATE** | **ACTIVATE_CRITICAL** | Batch (Nightly) | Kayıt üzerinden $\ge 7$ gün geçti AND toplam aktivite süresi $\le 0$ | 24 saat |
-| **STEADY** | **BOOST** | Batch (Nightly) | Son 7 günlük hedef tamamlama $<\%50$ **VEYA** son 4 günde ardışık 2 gün inaktif | 48 saat Cooldown |
-| **STEADY** | **RESTART** | Batch (Nightly) | Öğrencinin son 14 gün ortalaması $\ge 25\text{ dk/gün}$ **AND** son 4 gün ardışık sıfır aktivite | Anında (Kritik Kopuş) |
-| **BOOST** | **STEADY** | Batch / Event | Son 3 gün üst üste günlük hedefler $\ge \%80$ tamamlandı | 72 saat stabilite |
-| **BOOST** | **RESTART** | Batch (Nightly) | Boost durumunda iken ardışık 5 gün sıfır aktivite gerçekleşti | Anında |
-| **RESTART** | **BOOST** | Event: `CheckInSubmittedEvent` | Check-in anketinde "Yavaşlayarak devam etmek istiyorum" seçildi | Anında |
-| **RESTART** | **ACTIVATE** | Event: `CheckInSubmittedEvent` | Check-in anketinde "Sıfırdan baştan başlamak istiyorum" seçildi | Anında |
-| **RESTART** | **STEADY** | Event / Batch | Müdahale sonrası son 4 günde hedefler başarıyla yerine getirildi | 4 gün stabilite |
+| **ACTIVATE** | **STEADY** | Event: `MilestoneCompletedEvent` | **"Aha! Moment"** (bkz. §4.1): Bir videonun $\ge \%80$'i **ve** en az $180\text{ sn}$'si izlendi **VEYA** kümülatif $\ge 5$ soru çözüldü | Anında |
+| **ACTIVATE** | **ACTIVATE_CRITICAL** | Batch (Nightly) | Kayıt üzerinden $\ge 7$ gün geçti AND toplam aktivite süresi $= 0$ | 24 saat |
+| **STEADY** | **BOOST** | Batch (Nightly) | Son 7 günlük hedef tamamlama (WCR) $<\%50$ **VEYA** Seri Bozulması (önceki 10 günde $\ge 6$ aktif gün varken ardışık 2 gün inaktif) | 48 saat Cooldown |
+| **STEADY** | **RESTART** | Batch (Nightly) | **Kişisel Baseline** (bkz. §4.5): Kopuş öncesi 14 günde $\ge 4$ aktif gün **AND** ortalama $\ge 10\text{ dk/gün}$ **AND** ardışık inaktif gün $\ge$ `restart_threshold_days` | Anında (Cooldown'u deler) |
+| **BOOST** | **STEADY** | Batch / Event | Ardışık 3 "başarılı gün" (o günün *efektif/hafifletilmiş* hedefinin $\ge \%80$'i tamamlandı) | 72 saat stabilite |
+| **BOOST** | **RESTART** | Batch (Nightly) | Ardışık inaktif gün $\ge \max(5,\ $`restart_threshold_days`$)$ | Anında (Cooldown'u deler) |
+| **RESTART** | **BOOST** | Event: `CheckInSubmittedEvent` | Anket yanıtı `BURNOUT` (hedefler 5 gün $\%60$ hafifletilir, `BOOST_BURNOUT_RISK`) | Anında |
+| **RESTART** | **ACTIVATE** | Event: `CheckInSubmittedEvent` | Anket yanıtı `OTHER` (temiz sayfa, `ACTIVATE_ONBOARDING`) | Anında |
+| **RESTART_CHECKIN_PENDING** | **RESTART_ADAPTED** | Event: `CheckInSubmittedEvent` | Anket yanıtı `SCHOOL_EXAMS`, `SUBJECT_DIFFICULTY` veya `TECHNICAL_ISSUE` (eylemler: RFC-004 §4) | Anında |
+| **RESTART_CHECKIN_PENDING** | **RESTART_UNRESPONSIVE** | Batch (Saatlik) | Check-in kartı 48 saat yanıtsız | 48 saat |
+| **RESTART** | **STEADY** | Event / Batch | Ardışık 4 "başarılı gün" | 4 gün stabilite |
+| **RESTART_ADAPTED** | **BOOST** | Batch (Nightly) | Adaptasyon süresi (`paused_until` / eylem süresi) doldu ve 4 başarılı gün koşulu sağlanmadı | Adaptasyon bitimi |
 
 ---
 
@@ -74,7 +77,12 @@ Aşağıdaki tablo, durumlar arası geçiş koşullarını, tetikleyici mekanizm
   * `Day 0-2 (Onboarding):` Hoş geldin mikro adımı: "Sadece 3 dakikalık 'Nasıl Çalışmalıyım?' videosunu izle."
   * `Day 3-6 (Stalled):` Uygulamayı açıyor ama derse girmiyor: "Bugün 1 ders seç ve sadece ilk 5 dakikasına bak."
   * `Day 7+ (Critical):` Hiç login olmadı: Push Notification + Velisine bilgilendirme hazırlığı.
-* **Çıkış Kapısı (First Value Moment):** Öğrenci sisteme ilk anlamlı veriyi bıraktığı an (`video_duration >= 180s` VEYA `questions_solved >= 5`), anında `STEADY` durumuna yükseltilir.
+* **Çıkış Kapısı (First Value Moment):** Öğrenci sisteme ilk anlamlı veriyi bıraktığı an, anında `STEADY` durumuna yükseltilir. Kanonik tanım (tüm RFC'ler bu tanıma referans verir):
+  ```
+  is_aha_moment = (lesson.completion_percentage >= 80 AND lesson.watched_seconds >= 180)
+                  OR (lifetime_questions_solved >= 5)
+  ```
+  $180\text{ sn}$ alt sınırı, 1 dakikalık tanıtım videosunun %80'ini izlemenin "anlamlı aktivite" sayılmasını engeller.
 
 ### 4.2. 🟡 BOOST Motoru
 * **Problem:** Kopmadı ama bocalıyor. Hedefler birikiyor, öğrenci suçluluk hissediyor ve kaçma eğilimi gösteriyor.
@@ -85,26 +93,69 @@ Aşağıdaki tablo, durumlar arası geçiş koşullarını, tetikleyici mekanizm
   * **Seri Bozulması (Streak Break):** Öğrencinin geçmiş 10 günde en az 6 gün çalışması varken, ardışık 2 gün hiç girmemesi.
 * **Müdahale Stratejisi:**
   * Asla *"Çok geridesin, daha çok çalışmalısın!"* denmez.
-  * **Hedef Küçültme (Target Deceleration):** Günlük soru hedefi dinamik olarak $\%30 - \%50$ oranında otomatik kırpılır. Öğrenciye *"Bugün sadece 10 soru çözmen yeterli"* hissi verilir.
+  * **Hedef Küçültme (Target Deceleration):** Günlük soru hedefi varsayılan olarak $\%40$ kırpılır (`factor: 0.6`; şablon `config_payload`'ından $\%30 - \%50$ aralığında ayarlanabilir). Öğrenciye *"Bugün sadece 15 soru çözmen yeterli"* hissi verilir. `BURNOUT` anket yanıtında bu oran $\%60$'tır (`factor: 0.4`, bkz. RFC-004 §4).
+  * **Efektif Hedef Kuralı:** WCR ve "başarılı gün" hesapları her zaman o günün **efektif (hafifletilmiş)** hedefine göre yapılır. Aksi halde hafifletilmiş hedefi tamamlayan öğrenci orijinal hedefe göre başarısız görünür ve `BOOST`'tan hiç çıkamaz.
 * **Çıkış Kapısı:** Ardışık 3 gün boyunca bu hafifletilmiş hedeflerin en az $\%80$'ini tamamladığında ritim oturmuş kabul edilip `STEADY` durumuna geçirilir.
 
 ### 4.3. 🔴 RESTART Motoru
 * **Problem:** Düzenli çalışan öğrenci birden kayboldu. Bu öğrenciye sıradan bir "Hadi çalış" bildirimi atmak ters teper; çünkü arkasında bir hayat olayı vardır (Hastalık, okul sınav haftası, tükenmişlik/burnout veya zor bir konuya takılma).
-* **Tespit Koşulu (Inactivity Drop):**
-  * Öğrenci daha önce `STEADY` veya aktif bir profilde olmalıdır ($\text{Son 14 gün ortalama süre} \ge 25\text{ dk/gün}$).
-  * Son $X$ gün (varsayılan: 4 gün) ardışık olarak sıfır aktivite kaydedilmelidir.
+* **Tespit Koşulu (Inactivity Drop):** Öğrencinin **kendi normaline göre** anlamlı bir kopuş yaşaması gerekir. Mutlak bir dakika eşiği kullanılmaz; hesaplama §4.5'teki Kişisel Baseline algoritmasıyla yapılır:
+  * Öğrencinin kopuş öncesinde gerçek bir çalışma alışkanlığı olmalıdır (baseline penceresinde $\ge 4$ aktif gün, ortalama $\ge 10\text{ dk/gün}$).
+  * Ardışık inaktif gün sayısı öğrencinin kişisel eşiğini (`restart_threshold_days`, 4–7 gün arası) aşmalıdır.
 * **Proaktif Müdahale: Check-In Döngüsü (Feedback Loop):**
   1. Sisteme girdiğinde ana ekran kilitlenmez ancak en üstte şefkatli bir mini anket çıkar:  
      *"Birkaç gündür görüşemedik, her şey yolunda mı?"*
-  2. Seçenekler:
-     - 🅰️ *Okul yazılılarım / sınavlarım vardı.* $\rightarrow$ **Aksiyon:** 1 hafta boyunca Doping hedeflerini askıya al veya dondur.
-     - 🅱️ *Son çalıştığım konuyu hiç anlamadım, moralim bozuldu.* $\rightarrow$ **Aksiyon:** O konunun temel seviye hap videosunu ve 3 kolay sorusunu öner.
-     - 🅲️ *Çok yoruldum, tempom düştü.* $\rightarrow$ **Aksiyon:** Günlük hedefleri $\%60$ küçült, mikro ritme geç.
+  2. Anket 2 sorudan oluşur: **(1)** kök neden seçimi (zorunlu, tek seçim), **(2)** serbest not (opsiyonel, max 500 karakter). Seçenekler ve tetiklenen eylemler **kanonik olarak RFC-004 §4 Survey-to-Action Matrix**'te tanımlıdır; özet:
+     - `SCHOOL_EXAMS` $\rightarrow$ 7 gün hedef dondurma $\rightarrow$ `RESTART_ADAPTED`
+     - `SUBJECT_DIFFICULTY` $\rightarrow$ ön koşul hap video + 3 kolay soru $\rightarrow$ `RESTART_ADAPTED`
+     - `BURNOUT` $\rightarrow$ hedefler 5 gün $\%60$ hafifletilir $\rightarrow$ `BOOST` (`BOOST_BURNOUT_RISK`)
+     - `TECHNICAL_ISSUE` $\rightarrow$ yüksek öncelikli destek bileti, 3 gün değerlendirme dışı $\rightarrow$ `RESTART_ADAPTED`
+     - `OTHER` $\rightarrow$ temiz sayfa $\rightarrow$ `ACTIVATE` (`ACTIVATE_ONBOARDING`)
+
+     Eylem, öğrencinin seçtiği nedenden sunucu tarafında türetilir; istemci ayrıca bir eylem talep etmez.
   3. **Yanıtsızlık Durumu (Unresponsive Escalation):** Check-in kartı 48 saat boyunca yanıtlanmazsa, durum `RESTART_UNRESPONSIVE` olur ve veli/koç panelinde risk bayrağı (`CHURN_RISK_HIGH`) kalkar.
 
 ### 4.4. ⚪ STEADY (On-Track & Baseline)
 * Öğrencinin haftalık hedeflerinin $\ge \%70$'ini tutturduğu, çalışma aralıklarının 48 saati aşmadığı sağlıklı çalışma durumudur.
 * **Önemli Kural:** Bu durumdaki öğrenciye "müdahale kartı" gösterilmez. Sadece tebrik, seviye atlama ve streak (gün serisi) sayaçları gösterilir.
+
+### 4.5. 📐 Kişisel Baseline Hesaplaması (Personal Baseline Algorithm)
+
+**Problem (Pencere Seyrelmesi / Window Dilution):** "Son 14 günün ortalaması $\ge X$ AND son 4 gün sıfır" kuralı kendi kendini sabote eder. Ortalama penceresi inaktif günleri de içerdiği için öğrenci kayboldukça ortalaması düşer. Böylece en uzun süre kaybolan, yani en kritik öğrenci RESTART koşulundan *çıkar*. Ayrıca mutlak bir dakika eşiği, haftada 2–3 gün çalışan düşük tempolu (örn. LGS) öğrenciyi hiçbir zaman RESTART'a düşürmez.
+
+**Çözüm: Kopuş Öncesine Sabitlenmiş Pencere (Anchored Baseline Window)**
+
+```
+Zaman ekseni (gün):
+
+   ◄────── Baseline Penceresi (14 gün) ──────►◄── İnaktif Seri ──►
+   [d-14-k ...........................d-1-k ][ d-k ......... d-1 ][ bugün ]
+                                              ▲
+                                     streak_start (son aktif günün ertesi)
+```
+
+* `k = consecutive_inactive_days`. Baseline, inaktif seri başlamadan **önceki** 14 günden hesaplanır. Seri uzadıkça pencere geriye kayar ama ölçtüğü şey değişmez: öğrencinin *kopmadan önceki* normali.
+* **Aktif gün:** `watch_seconds >= 300 OR questions_solved >= 5` olan gün (uygulamayı açıp kapatmak aktif gün sayılmaz).
+
+**Hesaplanan Değerler:**
+
+| Değer | Formül | Amacı |
+| :--- | :--- | :--- |
+| `baseline_active_days` | Penceredeki aktif gün sayısı | Gerçek bir alışkanlık var mı? (Eşik: $\ge 4$) |
+| `baseline_avg_minutes` | $\frac{\sum \text{watch\_minutes}}{14}$ | Gürültü filtresi (Eşik: $\ge 10\text{ dk/gün}$) |
+| `baseline_max_gap` | Penceredeki iki aktif gün arasındaki en uzun inaktif seri | Öğrencinin *normal* boşluk uzunluğu |
+| `restart_threshold_days` | $\text{clamp}(\text{baseline\_max\_gap} + 2,\ 4,\ 7)$ | Kişisel kopuş eşiği |
+
+**Örnekler:**
+
+| Profil | Baseline Davranışı | `max_gap` | Kişisel Eşik | Sonuç |
+| :--- | :--- | :---: | :---: | :--- |
+| YKS derece öğrencisi | Her gün ~90 dk | 0 | **4 gün** | 4. sessiz günde RESTART |
+| Düzenli LGS öğrencisi | Gün aşırı ~30 dk | 1 | **4 gün** | 4. sessiz günde RESTART |
+| Hafta sonu çalışanı | Haftada 2 gün ~60 dk (ort. ~17 dk/gün) | 4 | **6 gün** | Normal 4–5 günlük boşluğunda alarm *çalmaz*, 6. günde RESTART |
+| Seyrek kullanıcı | 14 günde 2 aktif gün | — | — | Alışkanlık yok $\rightarrow$ RESTART değil; BOOST/WCR kurallarıyla izlenir |
+
+**Performans Notu:** Hesap, `pulse_daily_aggregates` üzerinde öğrenci başına tek bir indeksli aralık sorgusudur (en fazla $14 + 7 = 21$ satır). `idx_daily_aggregates_window` indeksiyle karşılanır (RFC-002 §3.2).
 
 ---
 
@@ -119,19 +170,25 @@ Durum motoru, öğrencinin geçişlerini denetlerken aşağıdaki **Sliding Wind
                                      │
                                      ▼
                 ┌─────────────────────────────────────────┐
-                │ Cooldown Kontrolü:                      │
-                │ Son durum değişikliğinden bu yana       │
-                │ en az 48 saat geçti mi?                 │
+                │ Acil Durum İstisnası:                   │
+                │ Hedef durum RESTART mı?                 │
                 └────────────────────┬────────────────────┘
-                                     │
                      ┌───────────────┴───────────────┐
-                     │ EVET                          │ HAYIR
-                     ▼                               ▼
+                     │ EVET (Cooldown delinir)       │ HAYIR
+                     │                               ▼
+                     │       ┌─────────────────────────────────────────┐
+                     │       │ Cooldown Kontrolü:                      │
+                     │       │ Son durum değişikliğinden bu yana       │
+                     │       │ en az 48 saat geçti mi?                 │
+                     │       └────────────────────┬────────────────────┘
+                     │            ┌───────────────┴───────────────┐
+                     │            │ EVET                          │ HAYIR
+                     ▼            ▼                               ▼
        ┌───────────────────────────┐   ┌───────────────────────────┐
        │ Hedef durum mevcut durum- │   │ Durum Değiştirme YASAK    │
        │ la aynı mı?               │   │ (Sadece metrik güncelle)  │
        └─────────────┬─────────────┘   └───────────────────────────┘
-                     │ FARKLI
+                     │ FARKLI (AYNI ise no-op: tekrar event/kart üretilmez)
                      ▼
        ┌───────────────────────────┐
        │ Öncelik Değerlendirmesi:  │
@@ -154,80 +211,94 @@ Durum motoru, öğrencinin geçişlerini denetlerken aşağıdaki **Sliding Wind
 Aşağıdaki mantık, her öğrenci değerlendirilirken çalışan deterministik fonksiyonu gösterir:
 
 ```python
-def evaluate_student_pulse(student_id: UUID, context: PulseEvaluationContext) -> PulseEvaluationResult:
-    current_state = context.current_state
+# Kanonik parametreler (tek kaynak: bu RFC). Değerler config servisinden okunur.
+AHA_MIN_COMPLETION_PCT     = 80
+AHA_MIN_WATCH_SECONDS      = 180
+AHA_MIN_QUESTIONS          = 5
+COOLDOWN_HOURS             = 48
+BOOST_ENTRY_WCR            = 0.50
+BOOST_EXIT_SUCCESS_DAYS    = 3
+RESTART_EXIT_SUCCESS_DAYS  = 4
+BASELINE_MIN_ACTIVE_DAYS   = 4
+BASELINE_MIN_AVG_MINUTES   = 10.0
+
+def evaluate_student_pulse(student_id: UUID, ctx: PulseEvaluationContext) -> PulseEvaluationResult:
+    state, sub_state = ctx.current_state, ctx.current_sub_state
     now = current_timestamp()
 
-    # 1. Cooldown Kontrolü (Hysteresis Guard)
-    # Acil durum istisnası: Aktiften ani kopuş (RESTART) cooldown dinlemez!
-    is_in_cooldown = (now - context.state_updated_at).days < 2
-    
-    # 2. Metrik Hesaplamaları
-    inactive_days = context.consecutive_inactive_days
-    avg_minutes_last_14d = context.last_14d_daily_average_minutes
-    completion_rate_last_7d = context.last_7d_target_completion_rate
-    has_meaningful_activity = context.total_lifetime_watch_seconds > 180 or context.total_lifetime_questions > 5
+    # 0. Değerlendirme dışı (PAUSED): Sınav dondurma, teknik sorun, öğrenci isteği
+    if ctx.is_paused and ctx.paused_until > now:
+        return PulseEvaluationResult.no_change()
+
+    is_in_cooldown = (now - ctx.state_updated_at) < timedelta(hours=COOLDOWN_HOURS)
+    inactive_days  = ctx.consecutive_inactive_days
+    wcr_7d         = ctx.last_7d_effective_completion_rate   # Efektif (hafifletilmiş) hedefe göre
+    success_days   = ctx.consecutive_successful_days         # Efektif hedefin >= %80'i tamamlanan ardışık gün
 
     # -------------------------------------------------------------
-    # KURAL 1: ACTIVATE Kontrolü
+    # KURAL 1: ACTIVATE Kontrolü (Aha! Moment, bkz. §4.1)
     # -------------------------------------------------------------
-    if current_state == PulseState.ACTIVATE:
-        if has_meaningful_activity:
-            return PulseEvaluationResult(
-                new_state=PulseState.STEADY,
-                sub_state="STEADY_NORMAL",
-                reason="FIRST_MEANINGFUL_MILESTONE_ACHIEVED"
-            )
-        elif context.days_since_enrollment >= 7 and inactive_days >= 7:
-            return PulseEvaluationResult(
-                new_state=PulseState.ACTIVATE,
-                sub_state="ACTIVATE_CRITICAL",
-                reason="ZERO_ACTIVITY_FIRST_WEEK"
-            )
+    if state == PulseState.ACTIVATE:
+        is_aha_moment = (
+            (ctx.best_lesson_completion_pct >= AHA_MIN_COMPLETION_PCT
+                and ctx.best_lesson_watched_seconds >= AHA_MIN_WATCH_SECONDS)
+            or ctx.lifetime_questions_solved >= AHA_MIN_QUESTIONS
+        )
+        if is_aha_moment:
+            return transition(PulseState.STEADY, "STEADY_NORMAL", "FIRST_MEANINGFUL_MILESTONE_ACHIEVED")
+        if ctx.days_since_enrollment >= 7 and ctx.lifetime_active_seconds == 0:
+            return transition(PulseState.ACTIVATE, "ACTIVATE_CRITICAL", "ZERO_ACTIVITY_FIRST_WEEK")
         return PulseEvaluationResult.no_change()
 
     # -------------------------------------------------------------
-    # KURAL 2: RESTART Kontrolü (Öncelik: 1)
-    # Düzenli çalışan bir öğrenci 4+ gün boyunca hiç girmedi mi?
+    # KURAL 2: RESTART Girişi (Öncelik: 1, cooldown'u deler)
+    # Baseline kopuş öncesine sabitlenmiş pencereden gelir (§4.5)
     # -------------------------------------------------------------
-    is_historically_active = avg_minutes_last_14d >= 25.0
-    if is_historically_active and inactive_days >= 4:
-        return PulseEvaluationResult(
-            new_state=PulseState.RESTART,
-            sub_state="RESTART_CHECKIN_PENDING",
-            reason=f"SUDDEN_DROP_AFTER_{avg_minutes_last_14d}_MIN_BASELINE"
-        )
+    if state in (PulseState.STEADY, PulseState.BOOST):
+        b = ctx.anchored_baseline   # inaktif seri başlamadan önceki 14 gün
+        has_habit = (b.active_days >= BASELINE_MIN_ACTIVE_DAYS
+                     and b.avg_minutes >= BASELINE_MIN_AVG_MINUTES)
+        threshold = b.restart_threshold_days                  # clamp(max_gap + 2, 4, 7)
+        if state == PulseState.BOOST:
+            threshold = max(5, threshold)
+            has_habit = True                                  # BOOST zaten aktif geçmişi ima eder
+        if has_habit and inactive_days >= threshold:
+            return transition(PulseState.RESTART, "RESTART_CHECKIN_PENDING",
+                              f"INACTIVE_{inactive_days}D_PERSONAL_THRESHOLD_{threshold}D")
 
-    # Cooldown koruması: RESTART harici durum değişiklikleri 48 saat beklemeli
+    # Cooldown koruması: RESTART girişi dışındaki tüm geçişler 48 saat bekler
     if is_in_cooldown:
         return PulseEvaluationResult.no_change()
 
     # -------------------------------------------------------------
-    # KURAL 3: BOOST Kontrolü (Öncelik: 2)
-    # Hedef tamamlama <%50 mi veya son 4 günde 2 gün aksama var mı?
+    # KURAL 3: BOOST Girişi (Öncelik: 2)
     # -------------------------------------------------------------
-    if current_state in [PulseState.STEADY, PulseState.BOOST]:
-        if completion_rate_last_7d < 0.50 or context.streak_broken_recently:
-            if current_state != PulseState.BOOST:
-                return PulseEvaluationResult(
-                    new_state=PulseState.BOOST,
-                    sub_state="BOOST_LOW_PACE" if completion_rate_last_7d < 0.50 else "BOOST_STREAK_BROKEN",
-                    reason=f"WEEKLY_COMPLETION_RATE_{completion_rate_last_7d:.2f}"
-                )
+    if state == PulseState.STEADY:
+        if wcr_7d < BOOST_ENTRY_WCR:
+            return transition(PulseState.BOOST, "BOOST_LOW_PACE", f"WEEKLY_COMPLETION_RATE_{wcr_7d:.2f}")
+        if ctx.streak_broken_recently:   # önceki 10 günde >= 6 aktif gün + ardışık 2 gün inaktif
+            return transition(PulseState.BOOST, "BOOST_STREAK_BROKEN", "STREAK_BROKEN_2_DAYS")
 
     # -------------------------------------------------------------
     # KURAL 4: STEADY'ye Dönüş (Öncelik: 3)
-    # BOOST veya RESTART durumundaki öğrenci ritmini geri kazandı mı?
     # -------------------------------------------------------------
-    if current_state in [PulseState.BOOST, PulseState.RESTART]:
-        if context.consecutive_successful_days >= 3 and completion_rate_last_7d >= 0.70:
-            return PulseEvaluationResult(
-                new_state=PulseState.STEADY,
-                sub_state="STEADY_NORMAL",
-                reason="SUSTAINED_3_DAYS_CONSISTENT_PACE"
-            )
+    if state == PulseState.BOOST and success_days >= BOOST_EXIT_SUCCESS_DAYS:
+        return transition(PulseState.STEADY, "STEADY_NORMAL", "SUSTAINED_3_SUCCESSFUL_DAYS")
+    if state == PulseState.RESTART and success_days >= RESTART_EXIT_SUCCESS_DAYS:
+        return transition(PulseState.STEADY, "STEADY_NORMAL", "SUSTAINED_4_SUCCESSFUL_DAYS")
+
+    # -------------------------------------------------------------
+    # KURAL 5: Adaptasyon Süresi Doldu (RESTART_ADAPTED -> BOOST)
+    # -------------------------------------------------------------
+    if sub_state == "RESTART_ADAPTED" and ctx.adaptation_expires_at <= now:
+        return transition(PulseState.BOOST, "BOOST_LOW_PACE", "ADAPTATION_ENDED_WITHOUT_RECOVERY")
 
     return PulseEvaluationResult.no_change()
+
+# Not: transition(), hedef (state, sub_state) mevcut değerle aynıysa no_change() döner.
+# Böylece RESTART'taki öğrenci her gece yeniden RESTART'a "geçirilmez", mükerrer kart/event üretilmez.
+# Anket yanıtı kaynaklı geçişler (RESTART -> BOOST / ACTIVATE / RESTART_ADAPTED) bu fonksiyonda değil,
+# CheckInSubmittedEvent işleyicisinde (RFC-004 §4) yapılır.
 ```
 
 ---

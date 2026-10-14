@@ -15,6 +15,8 @@ State Machine (`RFC-001`), öğrencinin durumunun ne olduğuna karar verir (Örn
 2. *"Kartın başlığı, butonu ve yönlendireceği deep link ne olmalı?"* (Örn: Hangi ders, hangi video?)
 3. *"Öğrenci anketi yanıtladığında platform öğrencinin hedeflerini arka planda nasıl dönüştürmeli?"*
 
+> **Holdout Kuralı:** `experiment_arm = 'HOLDOUT'` olan öğrenciler için durum makinesi normal çalışır (shadow mode: durum hesaplanır, audit log yazılır) ancak Müdahale Motoru **kart üretmez**. Etki ölçümü bu karşılaştırmaya dayanır (RFC-007 §5).
+
 ```mermaid
 flowchart LR
     A[State Machine: Durum Değişti] --> B[Intervention Engine: Karar Tetiklendi]
@@ -40,8 +42,8 @@ Sistem 4 temel müdahale arketipini destekler:
 ### 2.2. `GOAL_ADAPTATION` (Dinamik Hedef Uyarlama)
 * **Kullanıldığı Durumlar:** `BOOST_LOW_PACE`, `BOOST_STREAK_BROKEN`
 * **Prensip:** Birikmiş ödev ve hedef baskısını hafifletmek.
-* **Uygulama:** Günlük hedef soru sayısı otomatik olarak $\%40$ kırpılır. Kart öğrenciye suçluluk hissettirmeden gösterilir:  
-  *"Bugün yükünü hafiflettik. 25 soru yerine sadece 12 soru çözerek ritmini koru!"*
+* **Uygulama:** Günlük hedef soru sayısı varsayılan olarak $\%40$ kırpılır (`factor: 0.6`, RFC-001 §4.2). Kart öğrenciye suçluluk hissettirmeden gösterilir:  
+  *"Bugün yükünü hafiflettik. 25 soru yerine sadece 15 soru çözerek ritmini koru!"*
 
 ### 2.3. `CHECK_IN_SURVEY` (Kök Neden Anket Kartı)
 * **Kullanıldığı Durumlar:** `RESTART_CHECKIN_PENDING`
@@ -81,15 +83,17 @@ Müdahale motoru, veritabanındaki şablon metinlerini öğrencinin bağlamına 
 
 ## 4. ReStart Check-In Anketi ve Eylem Haritası (Survey-to-Action Matrix)
 
-ReStart durumundaki bir öğrenci mini anketi yanıtladığında (`POST /pulse/checkins`), arka planda çalışan **Adaptasyon Orkestratörü (Adaptation Orchestrator)** otomatik eylemler tetikler:
+ReStart durumundaki bir öğrenci mini anketi yanıtladığında (`POST /pulse/checkins`), arka planda çalışan **Adaptasyon Orkestratörü (Adaptation Orchestrator)** otomatik eylemler tetikler. Bu tablo, anket seçeneklerinin ve sonuç durumlarının **kanonik kaynağıdır** (RFC-001, RFC-003 ve OpenAPI bu enum'lara referans verir). Eylem sunucu tarafında seçenekten türetilir; istemci ayrıca eylem talep etmez.
 
-| Anket Seçeneği | Açıklama | Tetiklenen Backend Eylemi (Action) | Öğrenciye Verilen Geri Bildirim |
-| :--- | :--- | :--- | :--- |
-| **`SCHOOL_EXAMS`** | "Okul sınavlarım / yazılılarım çok yoğundu." | **`ACTION_FREEZE_GOALS(days: 7)`**<br>Haftalık hedefler 7 gün dondurulur, öğrenciye sadece konu özet hapları açılır. | *"Sınav haftanı biliyoruz! Doping hedeflerini 7 gün dondurduk, sınavlarına odaklan."* |
-| **`SUBJECT_DIFFICULTY`** | "Son çalıştığım konuyu anlamadım, moralim bozuldu." | **`ACTION_INJECT_PREREQUISITE(topic_id)`**<br>Zorlandığı konunun temel hazırlık videosu ve 3 kolay pekiştirme sorusu öne çıkarılır. | *"Zorlanman çok normal. Konunun temelini 5 dakikada anlatan hap videoyu hazırladık."* |
-| **`BURNOUT`** | "Çok yoruldum, tempomu koruyamadım." | **`ACTION_SCALE_TARGETS(factor: 0.4, days: 5)`**<br>Hedefler 5 günlüğüne $\%60$ hafifletilir. | *"Biraz nefes alma vakti! Günlük hedefini 10 soruya indirdik, ritmi kaybetme yeter."* |
-| **`TECHNICAL_ISSUE`** | "Uygulamada teknik bir sorun yaşadım." | **`ACTION_ESCALATE_SUPPORT(priority: HIGH)`**<br>Müşteri destek CRM'ine anında yüksek öncelikli çağrı bileti (ticket) açılır. | *"Teknik aksaklık için özür dileriz! Destek ekibimiz hemen seninle iletişime geçecek."* |
-| **`OTHER`** | "Kişisel / Başka bir neden." | **`ACTION_RESET_TO_ACTIVATE`**<br>Program sıfırlanır ve öğrenciye "Temiz bir sayfa aç" seçeneği sunulur. | *"Hiç sorun değil. İstediğin zaman temiz bir sayfayla sıfırdan başlayabilirsin."* |
+| Anket Seçeneği | Açıklama | Tetiklenen Backend Eylemi (Action) | Sonuç Durumu | Öğrenciye Verilen Geri Bildirim |
+| :--- | :--- | :--- | :--- | :--- |
+| **`SCHOOL_EXAMS`** | "Okul sınavlarım / yazılılarım çok yoğundu." | **`ACTION_FREEZE_GOALS(days: 7)`**<br>Haftalık hedefler 7 gün dondurulur (`is_paused`, `paused_until = +7g`), öğrenciye sadece konu özet hapları açılır. | `RESTART_ADAPTED` | *"Sınav haftanı biliyoruz! Doping hedeflerini 7 gün dondurduk, sınavlarına odaklan."* |
+| **`SUBJECT_DIFFICULTY`** | "Son çalıştığım konuyu anlamadım, moralim bozuldu." | **`ACTION_INJECT_PREREQUISITE(topic_id)`**<br>Zorlandığı konunun temel hazırlık videosu ve 3 kolay pekiştirme sorusu öne çıkarılır (adaptasyon süresi: 5 gün). | `RESTART_ADAPTED` | *"Zorlanman çok normal. Konunun temelini 5 dakikada anlatan hap videoyu hazırladık."* |
+| **`BURNOUT`** | "Çok yoruldum, tempomu koruyamadım." | **`ACTION_SCALE_TARGETS(factor: 0.4, days: 5)`**<br>Hedefler 5 günlüğüne $\%60$ hafifletilir. | `BOOST` / `BOOST_BURNOUT_RISK` | *"Biraz nefes alma vakti! Günlük hedefini 10 soruya indirdik, ritmi kaybetme yeter."* |
+| **`TECHNICAL_ISSUE`** | "Uygulamada teknik bir sorun yaşadım." | **`ACTION_ESCALATE_SUPPORT(priority: HIGH)`**<br>Müşteri destek CRM'ine anında yüksek öncelikli bilet açılır; öğrenci destek SLA'sı boyunca (3 gün) değerlendirme dışı tutulur. | `RESTART_ADAPTED` | *"Teknik aksaklık için özür dileriz! Destek ekibimiz hemen seninle iletişime geçecek."* |
+| **`OTHER`** | "Kişisel / Başka bir neden." | **`ACTION_RESET_TO_ACTIVATE`**<br>Program sıfırlanır ve öğrenciye "Temiz bir sayfa aç" seçeneği sunulur. | `ACTIVATE` / `ACTIVATE_ONBOARDING` | *"Hiç sorun değil. İstediğin zaman temiz bir sayfayla sıfırdan başlayabilirsin."* |
+
+`RESTART_ADAPTED` durumundan çıkış: Ardışık 4 başarılı gün $\rightarrow$ `STEADY`; adaptasyon süresi bu koşul sağlanmadan dolarsa $\rightarrow$ `BOOST` (RFC-001 §3).
 
 ---
 

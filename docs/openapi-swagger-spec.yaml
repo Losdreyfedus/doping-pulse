@@ -393,13 +393,11 @@ components:
           type: string
         selectedOptionKey:
           type: string
+          description: "Uygulanacak eylem bu değerden sunucu tarafında türetilir (RFC-004 §4)."
           enum: [SCHOOL_EXAMS, SUBJECT_DIFFICULTY, BURNOUT, TECHNICAL_ISSUE, OTHER]
         freeTextNote:
           type: string
           maxLength: 500
-        requestedAdaptation:
-          type: string
-          enum: [REDUCE_LOAD_50_PERCENT, FREEZE_1_WEEK, RESTART_FRESH]
 
     CheckInResponseDTO:
       type: object
@@ -414,7 +412,7 @@ components:
           example: true
         feedbackMessage:
           type: string
-          example: "Seni çok iyi anlıyoruz! Hedeflerini 1 hafta boyunca %50 hafiflettik."
+          example: "Sınav haftanı biliyoruz! Doping hedeflerini 7 gün dondurduk, sınavlarına odaklan."
         newPulseState:
           type: string
           enum: [ACTIVATE, BOOST, RESTART, STEADY]
@@ -425,13 +423,14 @@ components:
           properties:
             actionType:
               type: string
-              example: "SCHEDULE_HALVED"
+              enum: [ACTION_FREEZE_GOALS, ACTION_INJECT_PREREQUISITE, ACTION_SCALE_TARGETS, ACTION_ESCALATE_SUPPORT, ACTION_RESET_TO_ACTIVATE]
+              example: "ACTION_FREEZE_GOALS"
             dailyTargetQuestions:
               type: integer
-              example: 10
+              example: 0
             dailyTargetDurationMinutes:
               type: integer
-              example: 20
+              example: 0
             validUntil:
               type: string
               format: date-time

@@ -53,8 +53,8 @@ doping-pulse/
 | **RFC-003** | [API Spesifikasyonu](docs/api-specification.md) | Servis Sözleşmesi | **Zero-Trust & Idempotency:** JWT claim çözümleme, mükerrer istek koruması (`Idempotency-Key`), RFC 7807 `ProblemDetails` hata standardı. |
 | **RFC-004** | [Müdahale Motoru](docs/intervention-engine-and-surveys.md) | İçerik Önerisi | **Survey-to-Action Matrix:** Anket cevaplarına göre hedefleri dondurma veya hazırlık videosu atama; günde max 1 kart ve dismissal backoff kuralı. |
 | **RFC-005** | [Veli & Koç Eskalasyonu](docs/coaching-and-guardian-escalation.md) | İnsan Faktörü | **"Şikayet Etme, Çözüm Sun":** 4 kademeli alarm (Öğrenci $\rightarrow$ Koç $\rightarrow$ Veli $\rightarrow$ CRM Outbound); öğrenci derse girince otomatik çözümleme. |
-| **RFC-006** | [Olay Güdümlü Altyapı](docs/event-driven-messaging-architecture.md) | Mesajlaşma (Kafka) | **Strict In-Order per Student:** Partition Key = `studentId`, sıfır senkron bağımlılık (fire-and-forget), 3x exponential backoff & DLQ. |
-| **RFC-007** | [Gözlemlenebilirlik & SLA](docs/monitoring-alerting-and-slas.md) | SRE & İzleme | **%99.95 Uptime & Sub-30ms Latency:** Prometheus durum dağılım sayaçları, Grafana dönüşüm hunileri, Sev-1 PagerDuty alarmları. |
+| **RFC-006** | [Olay Güdümlü Altyapı](docs/event-driven-messaging-architecture.md) | Mesajlaşma (Kafka) | **Strict In-Order per Student:** Partition Key = `studentId`, sıfır senkron bağımlılık (fire-and-forget), Transactional Outbox, transaction içi idempotent tüketici, 3x exponential backoff & DLQ. |
+| **RFC-007** | [Gözlemlenebilirlik & SLA](docs/monitoring-alerting-and-slas.md) | SRE & İzleme | **%99.95 Uptime & Sub-30ms Latency:** Prometheus durum dağılım sayaçları, Grafana dönüşüm hunileri, Sev-1 PagerDuty alarmları, %10 holdout ile etki (uplift) ölçümü. |
 | **OpenAPI** | [Swagger YAML](docs/openapi-swagger-spec.yaml) | Entegrasyon | **Etkileşimli Test:** Swagger Editor ve Postman uyumlu, tam şemalı, örnek payload'lu canlı API kontratı. |
 
 ---

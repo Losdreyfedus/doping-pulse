@@ -63,6 +63,9 @@ CREATE TABLE pulse_student_states (
     active_intervention_id      UUID NULL, -- Aktif ekrandaki müdahale (Varsa)
     is_paused                   BOOLEAN NOT NULL DEFAULT FALSE, -- Öğrenci sınav/hastalık dondurması
     paused_until                TIMESTAMPTZ NULL,
+    adaptation_expires_at       TIMESTAMPTZ NULL, -- RESTART_ADAPTED / BOOST_BURNOUT_RISK adaptasyon bitişi (RFC-001 §3)
+    experiment_arm              VARCHAR(16) NOT NULL DEFAULT 'TREATMENT'
+                                CHECK (experiment_arm IN ('TREATMENT', 'HOLDOUT')), -- Etki ölçümü (RFC-007 §5)
     version                     INTEGER NOT NULL DEFAULT 1, -- Optimistic Locking
     created_at                  TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     updated_at                  TIMESTAMPTZ NOT NULL DEFAULT NOW()
@@ -222,7 +225,7 @@ CREATE TABLE pulse_checkin_responses (
     survey_id                   VARCHAR(64) NOT NULL REFERENCES pulse_checkin_surveys(survey_id),
     selected_option_key         VARCHAR(64) NOT NULL, -- 'SCHOOL_EXAMS', 'SUBJECT_DIFFICULTY', 'BURNOUT'
     free_text_note              VARCHAR(500) NULL,
-    triggered_adaptation        VARCHAR(64) NOT NULL, -- 'PROGRAM_HALVED_7D', 'SCHEDULE_FROZEN_3D'
+    triggered_adaptation        VARCHAR(64) NOT NULL, -- RFC-004 §4: 'ACTION_FREEZE_GOALS', 'ACTION_SCALE_TARGETS', ...
     created_at                  TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
@@ -252,6 +255,43 @@ CREATE TABLE pulse_state_audit_logs (
 CREATE INDEX idx_pulse_audit_student_timeline 
 ON pulse_state_audit_logs (student_id, created_at DESC);
 ```
+
+---
+
+### 3.8. `pulse_outbox` (Transactional Outbox)
+Çıkış olaylarının iş verisiyle aynı transaction'da yazıldığı tablodur. Kafka'ya taşıma işini Outbox Relay yapar (RFC-006 §6).
+
+```sql
+CREATE TABLE pulse_outbox (
+    id                          UUID NOT NULL,           -- UUIDv7 = eventId (zaman sıralı)
+    aggregate_id                UUID NOT NULL,           -- studentId -> Kafka partition key
+    topic                       VARCHAR(128) NOT NULL,   -- 'pulse.student.state_changed'
+    event_type                  VARCHAR(128) NOT NULL,
+    payload                     JSONB NOT NULL,          -- Event Envelope (RFC-006 §3)
+    created_at                  TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    published_at                TIMESTAMPTZ NULL,
+    PRIMARY KEY (created_at, id)
+) PARTITION BY RANGE (created_at);
+
+-- Relay'in yalnızca yayınlanmamış satırları tarayan kısmi indeksi (tablo büyüse de küçük kalır)
+CREATE INDEX idx_outbox_unpublished
+ON pulse_outbox (created_at, id)
+WHERE published_at IS NULL;
+```
+
+### 3.9. `pulse_processed_events` (İdempotent Tüketici Kaydı)
+İşlenen her giriş olayının `eventId`'si iş verisiyle aynı transaction'da yazılır (RFC-006 §5.1). Tablo günlük bölümlenir ve 14 günlük saklama süresi sonunda bölümler `DROP` edilir.
+
+```sql
+CREATE TABLE pulse_processed_events (
+    event_date                  DATE NOT NULL,           -- Olay zarfındaki timestamp'in günü (NOW() DEĞİL)
+    consumer_group              VARCHAR(64) NOT NULL,
+    event_id                    VARCHAR(64) NOT NULL,
+    processed_at                TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    PRIMARY KEY (event_date, consumer_group, event_id)
+) PARTITION BY RANGE (event_date);
+```
+> **Not (Bölümleme ve UNIQUE):** PostgreSQL, bölümlenmiş tablolarda unique kısıtın bölüm anahtarını içermesini zorunlu kılar. Bu yüzden bölüm anahtarı `NOW()` değil, **olayın kendi timestamp'inden türetilen** `event_date`'tir. Aynı olay hangi gün yeniden denenirse denensin aynı bölüme ve aynı PK'ya düşer, böylece `ON CONFLICT DO NOTHING` doğru çalışır. Saklama süresinden (14 gün) eski bir olay yeniden işletilmek istenirse (bölümü silinmiştir) consumer onu `STALE_EVENT` gerekçesiyle DLQ'ya yönlendirir ve sessizce işlemez.
 
 ---
 

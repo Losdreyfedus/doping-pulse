@@ -38,8 +38,9 @@ flowchart LR
         T2 --> C
         T3 --> C
         C --> PE[State Decision Engine]
-        PE -->|Publish| P1
-        PE -->|Publish| P2
+        PE -->|Aynı TX: pulse_outbox| OR[Outbox Relay]
+        OR -->|Publish| P1
+        OR -->|Publish| P2
     end
 
     subgraph Downstream Consumers
@@ -147,9 +148,75 @@ flowchart TD
 ```
 
 ### 5.1. İdempotent Tüketici (Duplicate Message Deduplication)
-Kafka en az bir kez teslimat (**At-least-once delivery**) garantisi sunar; bu da aynı mesajın nadiren de olsa iki kez gelebileceği anlamına gelir.  
-Pulse Consumer, gelen her `eventId`'yi Redis üzerinde 24 saatlik TTL ile saklar (`SETNX pulse:events:{eventId} 1 EX 86400`). Eğer anahtar zaten varsa mesaj sessizce yutulur ve çift durum tetiklenmesi önlenir.
+Kafka en az bir kez teslimat (**At-least-once delivery**) garantisi sunar; bu da aynı mesajın nadiren de olsa iki kez gelebileceği anlamına gelir.
+
+**Reddedilen Yaklaşım — İşlemden Önce Redis `SETNX`:** Anahtar işlemden *önce* yazılırsa ve işlem yarıda başarısız olursa (DB timeout, pod restart), retry ile gelen aynı mesaj "zaten görüldü" sanılıp yutulur. Sonuç **sessiz veri kaybıdır**: aktivite sayılmaz ve öğrenci haksız yere RESTART'a düşebilir. Redis ile DB ayrı sistemler olduğu için ikisini atomik yapmak mümkün değildir.
+
+**Kanonik Yaklaşım — Dedup Kaydı İş Verisiyle Aynı Transaction'da:**
+```sql
+BEGIN;
+  -- 1. Dedup: Mesaj daha önce işlendiyse 0 satır döner -> ROLLBACK + offset commit (sessizce atla)
+  INSERT INTO pulse_processed_events (event_date, consumer_group, event_id)
+  VALUES (:event_timestamp::date, 'pulse-engine', :event_id)   -- DDL: RFC-002 §3.9
+  ON CONFLICT DO NOTHING;
+
+  -- 2. İş verisi: Günlük agregasyon + durum güncellemesi + audit log
+  INSERT INTO pulse_daily_aggregates (...) ON CONFLICT (metric_date, student_id) DO UPDATE ...;
+  UPDATE pulse_student_states SET ..., version = version + 1 WHERE student_id = :sid AND version = :v;
+  INSERT INTO pulse_state_audit_logs (...);
+
+  -- 3. Çıkış olayı: Doğrudan Kafka'ya değil, Outbox tablosuna (bkz. §6)
+  INSERT INTO pulse_outbox (...);
+COMMIT;
+-- 4. Ancak COMMIT başarılıysa Kafka offset commit edilir.
+```
+* Dedup kaydı ile iş verisi birlikte commit edilir ya da birlikte geri alınır. Böylece "işlendi ama kaydedilmedi" veya "kaydedildi ama işlenmedi" ara durumu oluşamaz.
+* **Saklama süresi:** `pulse_processed_events` tablosu günlük bölümlenir ve **14 gün** tutulur. Bu süre Kafka topic retention'ından (7 gün) ve DLQ re-drive penceresinden uzundur; geç yeniden işletilen bir mesaj da dedup'a takılır. Eski bölümler `DROP PARTITION` ile maliyetsiz silinir. 14 günden eski olaylar `STALE_EVENT` olarak DLQ'ya gider.
+* Redis istenirse yalnızca **COMMIT sonrası** doldurulan bir hızlı yol önbelleği (fast-path cache) olarak kullanılabilir. Doğruluk garantisi her zaman DB'dedir.
+
+### 5.1.1. Retry Sırasında Sıra Garantisi
+Retry'lar (1 sn → 5 sn → 30 sn) **aynı partition üzerinde bloklayan (in-line)** şekilde yapılır; ayrı bir retry topic'ine taşınmaz. Mesaj başarıyla işlenene ya da DLQ'ya düşene kadar o partition'daki sonraki mesajlar beklediği için öğrenci bazında sıra korunur. Bunun bedeli, en kötü durumda o partition için ~36 sn gecikmedir ve bu süre SLO bütçesi içinde kalır.
+
+Bir mesaj DLQ'ya düştükten sonra aynı öğrencinin sonraki olayları işlenmeye devam eder; yani sıra bu noktada bilinçli olarak gevşetilir. Bu güvenlidir, çünkü karar motoru olay *sırasına* değil, `pulse_daily_aggregates` üzerindeki **toplam duruma** göre karar verir (state-based, not sequence-based). DLQ'dan yeniden işletilen (re-drive) mesaj agregasyona eklenir, dedup tablosu mükerrer işlemeyi engeller ve bir sonraki değerlendirme doğru sonuca ulaşır.
 
 ### 5.2. Dead-Letter Queue (DLQ)
 Tüm yeniden denemeler (3x Exponential Backoff) tükendiğinde mesaj atılmaz; hata yığını (stack trace) meta-verisi eklenerek `pulse.events.dlq` topic'ine yönlendirilir. Mühendislik ekibi alarm alır ve mesaj incelendikten sonra tek tıkla yeniden işletilebilir (Re-drive).
 
+
+---
+
+## 6. Transactional Outbox Pattern (Dual-Write Problemi)
+
+**Problem:** Durum değişikliği PostgreSQL'e yazılırken çıkış olayı (`pulse.student.state_changed`) Kafka'ya basılır. Bunlar iki ayrı sistemdir ve ikisini tek transaction'da yapmak mümkün değildir:
+
+| Senaryo | Sonuç |
+| :--- | :--- |
+| DB commit ✅ → Kafka publish ❌ (broker erişilemez, pod çöker) | Öğrenci `RESTART` oldu ama Push/CRM bundan haberdar olmadı; check-in bildirimi hiç gitmedi. |
+| Kafka publish ✅ → DB commit ❌ (optimistic lock çakışması) | Downstream servisler *hiç gerçekleşmemiş* bir durum değişikliğine göre veliye SMS attı. |
+
+**Çözüm:** Pulse motoru Kafka'ya **asla doğrudan** yazmaz. Çıkış olayları iş verisiyle **aynı transaction'da** `pulse_outbox` tablosuna yazılır (DDL: RFC-002 §3.8). Ayrı bir **Outbox Relay** süreci bu tabloyu Kafka'ya taşır.
+
+```mermaid
+flowchart LR
+    subgraph TX [Tek PostgreSQL Transaction]
+        S[UPDATE pulse_student_states]
+        A[INSERT pulse_state_audit_logs]
+        O[INSERT pulse_outbox]
+    end
+    TX --> R[Outbox Relay]
+    R -->|Partition Key = aggregate_id| K[(Kafka: pulse.*)]
+    K --> D[Downstream: Push / CRM / SMS]
+    D -.->|eventId ile dedup| D
+```
+
+### 6.1. Relay Seçenekleri
+| Seçenek | Nasıl Çalışır | Artı | Eksi | Karar |
+| :--- | :--- | :--- | :--- | :--- |
+| **Polling Publisher** | Relay worker'ları `SELECT ... WHERE published_at IS NULL ORDER BY id FOR UPDATE SKIP LOCKED LIMIT 500` ile satırları alır, Kafka'ya basar ve `published_at` alanını işaretler. | Ek altyapı gerektirmez, basit ve test edilebilir. | ~100–500 ms ek gecikme, DB'ye periyodik sorgu yükü. | **MVP** |
+| **CDC (Debezium)** | PostgreSQL WAL'ı okunur, outbox insert'leri Kafka'ya akıtılır (Outbox Event Router). | Gecikme <100 ms, DB'ye sorgu yükü yok. | Kafka Connect ve Debezium operasyonu, replication slot yönetimi gerekir. | **Ölçek fazı** |
+
+### 6.2. Garantiler ve Sorumluluklar
+* **At-least-once:** Relay Kafka'ya bastıktan sonra `published_at` işaretlenmeden çökerse olay ikinci kez basılır. Bu yüzden tüm downstream tüketiciler `eventId` üzerinden idempotent olmak **zorundadır** (§5.1 ile aynı desen). Bu bir sözleşme maddesidir.
+* **Sıra:** Outbox `id` (UUIDv7, zaman sıralı) ve `aggregate_id` (= `studentId`) partition key'i sayesinde öğrenci bazında sıra korunur.
+* **Temizlik:** `published_at` dolu satırlar 7 gün sonra bölüm bazında silinir.
+* **Gözlemlenebilirlik:** `pulse_outbox_unpublished_records` (gauge) ve `pulse_outbox_oldest_unpublished_age_seconds` metrikleri izlenir. 60 sn'yi aşan yaş Sev-2 alarmıdır (RFC-007 §4.2).

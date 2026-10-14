@@ -5,6 +5,8 @@
 **Hedef Sistem:** Doping Hafıza Öğrenci Etkileşim & Müdahale Altyapısı (Pulse Engine)  
 **Durum:** Draft / Review  
 
+> **Normatif Kaynak Kuralı:** Bu doküman Pulse'ın çatı özetidir. Kural eşikleri, DDL, API ve olay sözleşmeleri için **normatif (bağlayıcı) kaynak ilgili RFC'dir**: durum kuralları RFC-001, veritabanı RFC-002, API RFC-003 ve OpenAPI, müdahale ve anket RFC-004, mesajlaşma RFC-006. Bir çelişki görülürse RFC geçerlidir.
+
 ---
 
 ## 1. Yönetici Özeti ve Mimari Vizyon
@@ -29,186 +31,60 @@ Karar motoru iki kaynaktan beslenir:
 stateDiagram-v2
     [*] --> ACTIVATE: Kayıt Oldu / Paket Başladı
     
-    ACTIVATE --> STEADY: İlk Anlamlı Aktivite Tamamlandı (Örn: 1 Video + 1 Mini Test)
+    ACTIVATE --> STEADY: İlk Anlamlı Aktivite (Video ≥%80 ve ≥180 sn VEYA ≥5 Soru)
     ACTIVATE --> ACTIVATE: Aktivite Yok (Düşük eşikli mikro-görev devam eder)
     
-    STEADY --> BOOST: Aktivite Tempoda Düşüş (Haftalık Hedef < %50 veya 3 Gün Düzensizlik)
-    STEADY --> RESTART: Ani Kopuş (Aktifken ardışık 4+ gün sıfır aktivite)
+    STEADY --> BOOST: Tempoda Düşüş (Haftalık Hedef < %50 veya Seri Bozulması)
+    STEADY --> RESTART: Ani Kopuş (Kişisel eşik: ardışık 4-7 gün sıfır aktivite)
     
-    BOOST --> STEADY: Hedef Tempoya Yeniden Ulaşıldı (Son 3 gün hedefler tamamlandı)
-    BOOST --> RESTART: Düşüş Devam Etti (Ardışık 5 gün sıfır aktivite)
+    BOOST --> STEADY: Ritim Geri Geldi (Ardışık 3 başarılı gün)
+    BOOST --> RESTART: Düşüş Devam Etti (Ardışık 5+ gün sıfır aktivite)
     
-    RESTART --> ACTIVATE: Check-in Tamamlandı / Sıfırdan Başlangıç Kararı Verildi
-    RESTART --> BOOST: Check-in Tamamlandı / Hafifletilmiş Program Seçildi
-    RESTART --> STEADY: Hızlı Dönüş Sağlandı
+    RESTART --> ACTIVATE: Check-in = OTHER (Temiz sayfa)
+    RESTART --> BOOST: Check-in = BURNOUT (Hedefler %60 hafifletildi)
+    RESTART --> STEADY: Ardışık 4 başarılı gün
 ```
 
 ### Karar Kuralları ve Eşik Değerleri (Rule Matrix)
 
 | Hedef Durum | Tetikleyici Sinyal (Signal) | Eşik Değer (Threshold) | Örnek Müdahale (Intervention) |
 | :--- | :--- | :--- | :--- |
-| **ACTIVATE** | Kayıt/Giriş var, aktivite yok | Son 48 saatte izlenen video $\le 0$ AND çözülen soru $\le 0$ | "Bugün sadece 5 dakikalık konuya giriş videosunu izle." (Micro-Task) |
-| **BOOST** | Düşük / Düzensiz tempo | Son 7 günde hedef tamamlama oranı $<\%50$ OR son 4 günde 2+ gün boşluk | "Haftalık hedefini 20 sorudan 10 soruya düşürdük, ritmini koru." |
-| **RESTART** | Aktif profilden ani kopuş | Önceki 14 günde günlük ortalama $\ge 30\text{ dk}$, son 4 günde $0\text{ dk}$ | 2 soruluk Mini Check-in: "Seni ne zorladı? (Okul sınavları / Konuyu anlamadım / Yoruldum)" |
+| **ACTIVATE** | Kayıt var, henüz "Aha! Moment" yok | Video $\ge \%80$ ve $\ge 180\text{ sn}$ izlenmedi AND kümülatif $< 5$ soru | "Bugün sadece 5 dakikalık konuya giriş videosunu izle." (Micro-Task) |
+| **BOOST** | Düşük / Düzensiz tempo | Son 7 günde efektif hedef tamamlama $<\%50$ OR Seri Bozulması (önceki 10 günde $\ge 6$ aktif gün + ardışık 2 gün inaktif) | "Bugünkü hedefini 20 sorudan 12 soruya düşürdük, ritmini koru." ($\%40$ hafifletme) |
+| **RESTART** | Kişisel normale göre ani kopuş | Kopuş öncesi 14 günde $\ge 4$ aktif gün ve ort. $\ge 10\text{ dk/gün}$ AND ardışık inaktif gün $\ge$ kişisel eşik (4–7 gün, RFC-001 §4.5) | 2 soruluk Mini Check-in: "Seni ne zorladı? (Okul sınavları / Konuyu anlamadım / Yoruldum / Teknik sorun / Diğer)" |
 | **STEADY** | Düzenli çalışma | Hedef tamamlama oranı $\ge \%70$ | Müdahale yok; tebrik/seri (streak) sayacı gösterimi. |
 
 ---
 
-## 3. Veritabanı Şeması (Database Schema - PostgreSQL DDL)
+## 3. Veritabanı Şeması (Database Schema)
 
-Sistem ilişkisel bir veritabanı (RDBMS - PostgreSQL) üzerinde tasarlanmıştır.
+Pulse veri katmanı PostgreSQL 16+ üzerinde tasarlanmıştır. Üretim DDL'i, indeks stratejisi, bölümleme ve eşzamanlılık kuralları için **normatif kaynak [RFC-002: Veritabanı Şeması ve İndeksleme](database-schema-and-indexing.md)** dokümanıdır. Bu bölüm yalnızca genel bir bakış sunar.
 
 ```mermaid
 erDiagram
-    STUDENT ||--|| PULSE_STUDENT_STATE : has
-    STUDENT ||--o{ PULSE_DAILY_AGGREGATE : aggregates
+    PULSE_STUDENT_STATE ||--o{ PULSE_DAILY_AGGREGATE : aggregates
     PULSE_STUDENT_STATE ||--o{ PULSE_STUDENT_INTERVENTION : receives
     PULSE_INTERVENTION_TEMPLATE ||--o{ PULSE_STUDENT_INTERVENTION : instantiates
     PULSE_STUDENT_INTERVENTION ||--o{ PULSE_INTERVENTION_EVENT : tracks
     PULSE_STUDENT_STATE ||--o{ PULSE_CHECKIN_RESPONSE : records
     PULSE_CHECKIN_SURVEY ||--o{ PULSE_CHECKIN_RESPONSE : answers
     PULSE_STUDENT_STATE ||--o{ PULSE_STATE_AUDIT_LOG : logs
+    PULSE_STUDENT_STATE ||--o{ PULSE_OUTBOX : emits
 ```
 
-### 3.1. `pulse_student_states`
-Öğrencinin anlık nabız durumunu tutan ana tablo.
+| Tablo | Sorumluluk | Kilit Tasarım Kararları | Detay |
+| :--- | :--- | :--- | :--- |
+| `pulse_student_states` | Öğrencinin anlık durumu, alt durumu, aktif kartı ve dondurma/adaptasyon bilgisi | PK = `student_id`, Optimistic Locking (`version`), `experiment_arm` (holdout), `is_paused = FALSE` kısmi indeksi | RFC-002 §3.1 |
+| `pulse_daily_aggregates` | Kayan pencere ve kişisel baseline hesabı için günlük çalışma özeti | Aylık Range Partitioning, PK `(metric_date, student_id)`, `(student_id, metric_date DESC)` indeksi | RFC-002 §3.2 |
+| `pulse_intervention_templates` | Mikro-görev, kart ve bildirim şablon kataloğu | JSONB `config_payload` + GIN indeksi; yeni müdahale tipi migration gerektirmez | RFC-002 §3.3 |
+| `pulse_student_interventions` | Öğrenciye atanan kartın yaşam döngüsü | UUIDv7 PK, `status IN ('ASSIGNED','VIEWED')` kısmi indeksi (mobil ana ekran < 5 ms) | RFC-002 §3.4 |
+| `pulse_intervention_events` | Kart telemetrisi (impression, click, dismiss, complete) | Aylık Range Partitioning, yüksek yazma hacmi | RFC-002 §3.5 |
+| `pulse_checkin_surveys` / `pulse_checkin_responses` | ReStart anket tanımı ve yanıtları | Versiyonlu anket; seçenek enum'ları RFC-004 §4 ile aynı | RFC-002 §3.6 |
+| `pulse_state_audit_logs` | Değişmez durum geçiş izi ("neden RESTART'a düştü?") | Append-only; `metrics_snapshot` JSONB ile karar anındaki metrikler saklanır | RFC-002 §3.7 |
+| `pulse_outbox` | Çıkış olaylarının iş verisiyle aynı transaction'da yazılması | Transactional Outbox, `published_at IS NULL` kısmi indeksi | RFC-002 §3.8 |
+| `pulse_processed_events` | İdempotent tüketici (dedup) kaydı | Günlük bölümleme, 14 gün saklama, `event_date` bölüm anahtarı | RFC-002 §3.9 |
 
-```sql
-CREATE TYPE pulse_state_enum AS ENUM ('ACTIVATE', 'BOOST', 'RESTART', 'STEADY');
-
-CREATE TABLE pulse_student_states (
-    student_id          UUID PRIMARY KEY,
-    current_state       pulse_state_enum NOT NULL DEFAULT 'ACTIVATE',
-    previous_state      pulse_state_enum NULL,
-    state_reason        VARCHAR(255) NOT NULL, -- Örn: 'INACTIVITY_4_DAYS', 'NEW_ENROLLMENT'
-    state_updated_at    TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW(),
-    active_intervention_id UUID NULL,          -- Aktif olarak öğrencinin ekranındaki müdahale
-    consecutive_inactive_days INT NOT NULL DEFAULT 0,
-    created_at          TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW(),
-    updated_at          TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW()
-);
-
-CREATE INDEX idx_pulse_student_states_current ON pulse_student_states (current_state);
-```
-
-### 3.2. `pulse_daily_aggregates`
-Karar motorunun öğrencileri hızlı değerlendirebilmesi için gece derlenen (veya streaming aggregate) günlük çalışma metrikleri.
-
-```sql
-CREATE TABLE pulse_daily_aggregates (
-    id                  BIGSERIAL PRIMARY KEY,
-    student_id          UUID NOT NULL,
-    metric_date         DATE NOT NULL,
-    video_watch_seconds INT NOT NULL DEFAULT 0,
-    questions_solved    INT NOT NULL DEFAULT 0,
-    questions_correct   INT NOT NULL DEFAULT 0,
-    target_tasks_count  INT NOT NULL DEFAULT 0,
-    completed_tasks_count INT NOT NULL DEFAULT 0,
-    app_open_count      INT NOT NULL DEFAULT 0,
-    created_at          TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW(),
-    CONSTRAINT uq_student_metric_date UNIQUE (student_id, metric_date)
-);
-
-CREATE INDEX idx_daily_aggregates_lookup ON pulse_daily_aggregates (student_id, metric_date DESC);
-```
-
-### 3.3. `pulse_intervention_templates`
-Müdahale tipleri ve içerik şablonları kataloğu.
-
-```sql
-CREATE TYPE intervention_type_enum AS ENUM ('MICRO_TASK', 'GOAL_ADAPTATION', 'CHECK_IN_SURVEY', 'MOTIVATION_CARD', 'COACH_ESCALATION');
-
-CREATE TABLE pulse_intervention_templates (
-    template_id         VARCHAR(64) PRIMARY KEY, -- Örn: 'ACTIVATE_FIRST_VIDEO_5M', 'RESTART_REASON_SURVEY_V1'
-    pulse_state         pulse_state_enum NOT NULL,
-    intervention_type   intervention_type_enum NOT NULL,
-    title_template      VARCHAR(255) NOT NULL,
-    body_template       TEXT NOT NULL,
-    cta_text            VARCHAR(100) NOT NULL, -- "Hemen Başla", "Durumu Paylaş"
-    cta_deep_link       VARCHAR(500) NULL,     -- "doping://video/intro-101"
-    config_payload      JSONB NOT NULL DEFAULT '{}'::jsonb, -- Özel parametreler (görev id, soru listesi vb.)
-    is_active           BOOLEAN NOT NULL DEFAULT TRUE,
-    created_at          TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW()
-);
-```
-
-### 3.4. `pulse_student_interventions`
-Öğrenciye atanmış olan somut müdahaleler ve yaşam döngüleri.
-
-```sql
-CREATE TYPE intervention_status_enum AS ENUM ('ASSIGNED', 'VIEWED', 'INTERACTED', 'COMPLETED', 'DISMISSED', 'EXPIRED');
-
-CREATE TABLE pulse_student_interventions (
-    intervention_id     UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    student_id          UUID NOT NULL REFERENCES pulse_student_states(student_id) ON DELETE CASCADE,
-    template_id         VARCHAR(64) NOT NULL REFERENCES pulse_intervention_templates(template_id),
-    pulse_state         pulse_state_enum NOT NULL,
-    status              intervention_status_enum NOT NULL DEFAULT 'ASSIGNED',
-    custom_payload      JSONB NOT NULL DEFAULT '{}'::jsonb, -- Öğrenciye özel doldurulmuş içerik
-    expires_at          TIMESTAMP WITH TIME ZONE NOT NULL,
-    assigned_at         TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW(),
-    completed_at        TIMESTAMP WITH TIME ZONE NULL
-);
-
-CREATE INDEX idx_student_interventions_active ON pulse_student_interventions (student_id, status);
-```
-
-### 3.5. `pulse_intervention_events`
-Öğrencinin müdahaleye verdiği reaksiyonların analitiği (Telemetry / Audit).
-
-```sql
-CREATE TABLE pulse_intervention_events (
-    event_id            BIGSERIAL PRIMARY KEY,
-    intervention_id     UUID NOT NULL REFERENCES pulse_student_interventions(intervention_id) ON DELETE CASCADE,
-    student_id          UUID NOT NULL,
-    event_type          VARCHAR(50) NOT NULL, -- 'IMPRESSION', 'CLICK_CTA', 'DISMISS', 'COMPLETE'
-    metadata            JSONB NULL,
-    created_at          TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW()
-);
-```
-
-### 3.6. `pulse_checkin_surveys` & `pulse_checkin_responses`
-ReStart ve kopuş durumunda kullanılan hızlı anket sistemi.
-
-```sql
-CREATE TABLE pulse_checkin_surveys (
-    survey_id           VARCHAR(64) PRIMARY KEY, -- 'RESTART_DEFAULT_V1'
-    title               VARCHAR(255) NOT NULL,
-    question_text       VARCHAR(500) NOT NULL,
-    options             JSONB NOT NULL, -- [{"key": "SCHOOL_EXAMS", "label": "Okul sınavlarım yoğundu"}, ...]
-    is_active           BOOLEAN NOT NULL DEFAULT TRUE
-);
-
-CREATE TABLE pulse_checkin_responses (
-    response_id         UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    student_id          UUID NOT NULL REFERENCES pulse_student_states(student_id),
-    intervention_id     UUID NOT NULL REFERENCES pulse_student_interventions(intervention_id),
-    survey_id           VARCHAR(64) NOT NULL REFERENCES pulse_checkin_surveys(survey_id),
-    selected_reason     VARCHAR(100) NOT NULL, -- 'SCHOOL_EXAMS', 'SUBJECT_DIFFICULT', 'BURNOUT', 'OTHER'
-    student_note        TEXT NULL,
-    applied_action      VARCHAR(100) NULL, -- Sistemin ankete cevaben yaptığı eylem: 'GOAL_HALVED', 'ROUTINE_RESET'
-    created_at          TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW()
-);
-
-CREATE INDEX idx_checkin_reason ON pulse_checkin_responses (selected_reason);
-```
-
-### 3.7. `pulse_state_audit_logs`
-Öğrencinin durum geçmişi (Hangi tarihte neden ReStart'a girdi, ne zaman Boost'a geçti?).
-
-```sql
-CREATE TABLE pulse_state_audit_logs (
-    log_id              BIGSERIAL PRIMARY KEY,
-    student_id          UUID NOT NULL,
-    from_state          pulse_state_enum NULL,
-    to_state            pulse_state_enum NOT NULL,
-    transition_trigger  VARCHAR(100) NOT NULL, -- 'NIGHTLY_INACTIVITY_JOB', 'EVENT_WATCH_COMPLETED'
-    trigger_context     JSONB NULL,
-    created_at          TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW()
-);
-
-CREATE INDEX idx_pulse_audit_student ON pulse_state_audit_logs (student_id, created_at DESC);
-```
+**Ortak Prensipler:** Birincil anahtarlarda zaman sıralı UUIDv7 kullanılır (B-tree parçalanmasını önler). Hızla büyüyen tablolar Range Partitioning ile bölümlenir. Sıcak sorgular kısmi indekslerle karşılanır. Eşzamanlılık Optimistic Locking ve `FOR UPDATE SKIP LOCKED` ile yönetilir (RFC-002 §5).
 
 ---
 
@@ -243,9 +119,9 @@ interface InterventionCardDTO {
 interface CheckInSurveySubmissionDTO {
   interventionId: string;
   surveyId: string;
-  selectedReason: 'SCHOOL_EXAMS' | 'ACADEMIC_DIFFICULTY' | 'TIRED_OR_BURNOUT' | 'TECHNICAL_ISSUE' | 'OTHER';
+  selectedReason: 'SCHOOL_EXAMS' | 'SUBJECT_DIFFICULTY' | 'BURNOUT' | 'TECHNICAL_ISSUE' | 'OTHER';
   freeTextNote?: string;
-  requestedAction?: 'REDUCE_LOAD_50_PERCENT' | 'POSTPONE_3_DAYS' | 'RESTART_TOPIC';
+  // Eylem istemciden gelmez; selectedReason'dan sunucuda türetilir (RFC-004 §4)
 }
 ```
 
@@ -332,19 +208,20 @@ ReStart aşamasındaki öğrencinin mini anket yanıtını kaydeder ve buna gör
   "interventionId": "9e1c2b3a-4455-6677-8899-aabbccddeeff",
   "surveyId": "RESTART_DEFAULT_V1",
   "selectedReason": "SCHOOL_EXAMS",
-  "freeTextNote": "Yazılı haftasındaydım, sisteme bakamadım.",
-  "requestedAction": "REDUCE_LOAD_50_PERCENT"
+  "freeTextNote": "Yazılı haftasındaydım, sisteme bakamadım."
 }
 ```
 * **HTTP 200 OK Response:**
 ```json
 {
   "success": true,
-  "message": "Harika, seni anlıyoruz! Çalışma programını sınav haftana uygun şekilde 1 hafta boyunca %50 hafiflettik.",
-  "newPulseState": "BOOST",
+  "message": "Sınav haftanı biliyoruz! Doping hedeflerini 7 gün dondurduk, sınavlarına odaklan.",
+  "newPulseState": "RESTART",
+  "newPulseSubState": "RESTART_ADAPTED",
   "adaptedPlan": {
-    "dailyTargetQuestion": 10,
-    "dailyTargetVideoCount": 1,
+    "actionType": "ACTION_FREEZE_GOALS",
+    "dailyTargetQuestion": 0,
+    "dailyTargetVideoCount": 0,
     "validUntil": "2026-10-20T23:59:59Z"
   }
 }
@@ -418,20 +295,23 @@ sequenceDiagram
     participant PulseDB as Pulse PostgreSQL
 
     Student->>CoreApp: Video İzledi / Soru Çözdü
-    CoreApp->>Kafka: Publish: "student.activity.completed"
+    CoreApp->>Kafka: Publish: "learning.lesson.watched" / "learning.quiz.completed"
     
     Kafka->>PulseEngine: Consume Activity Event
-    PulseEngine->>PulseDB: Günlük Metriği Güncelle (daily_aggregates)
     PulseEngine->>PulseEngine: Kuralları Değerlendir (Context Rule Engine)
     
+    Note over PulseEngine,PulseDB: Tek Transaction (RFC-006 §5.1, §6)
+    PulseEngine->>PulseDB: INSERT pulse_processed_events (dedup)
+    PulseEngine->>PulseDB: Günlük Metriği Güncelle (daily_aggregates)
     alt Durum Değişimi Gerekli mi? (Örn: ACTIVATE -> STEADY)
         PulseEngine->>PulseDB: UPDATE pulse_student_states
         PulseEngine->>PulseDB: INSERT pulse_state_audit_logs
-        PulseEngine->>Kafka: Publish: "student.pulse.state_changed"
+        PulseEngine->>PulseDB: INSERT pulse_outbox ("pulse.student.state_changed")
     end
+    PulseDB-->>Kafka: Outbox Relay -> Publish
 
     Note over PulseEngine,PulseDB: Gece 03:00 Batch Worker (Kopuş Analizi)
-    PulseEngine->>PulseDB: 4 gündür aktivitesi olmayanları bul
+    PulseEngine->>PulseDB: Kişisel eşiğini aşan inaktif öğrencileri bul (RFC-001 §4.5)
     PulseEngine->>PulseDB: STEADY -> RESTART geçişi yap ve Check-in ata
 
     Student->>App: Uygulamayı Açar

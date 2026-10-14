@@ -148,6 +148,11 @@ ReStart durumundaki öğrenciye sunulacak mini anketin güncel soru ve şıklar�
       "icon": "battery_charging_20"
     },
     {
+      "key": "TECHNICAL_ISSUE",
+      "label": "Uygulamada teknik bir sorun yaşadım",
+      "icon": "report_problem"
+    },
+    {
       "key": "OTHER",
       "label": "Diğer bir sebep",
       "icon": "more_horiz"
@@ -168,21 +173,21 @@ ReStart durumundaki öğrenciye sunulacak mini anketin güncel soru ve şıklar�
   "interventionId": "018f3a2b-7c4d-7a89-9e12-3456789abcde",
   "surveyId": "RESTART_CORE_V1",
   "selectedOptionKey": "SCHOOL_EXAMS",
-  "freeTextNote": "Fizik yazılım vardı, tüm hafta ona hazırlandım.",
-  "requestedAdaptation": "REDUCE_LOAD_50_PERCENT"
+  "freeTextNote": "Fizik yazılım vardı, tüm hafta ona hazırlandım."
 }
 ```
+* **Not:** Uygulanacak eylem, `selectedOptionKey`'den sunucu tarafında türetilir (RFC-004 §4 Survey-to-Action Matrix). İstemci ayrıca eylem göndermez; böylece iş kuralı tek bir yerde kalır ve mobil sürüm güncellemesi gerektirmeden değiştirilebilir.
 * **Örnek Başarılı Yanıt (HTTP 200 OK):**
 ```json
 {
   "success": true,
-  "feedbackMessage": "Seni çok iyi anlıyoruz! Yazılı döneminde hedeflerini 1 hafta boyunca %50 hafiflettik.",
-  "newPulseState": "BOOST",
-  "newPulseSubState": "BOOST_LOW_PACE",
+  "feedbackMessage": "Sınav haftanı biliyoruz! Doping hedeflerini 7 gün dondurduk, sınavlarına odaklan.",
+  "newPulseState": "RESTART",
+  "newPulseSubState": "RESTART_ADAPTED",
   "appliedAdaptation": {
-    "actionType": "SCHEDULE_HALVED",
-    "dailyTargetQuestions": 10,
-    "dailyTargetDurationMinutes": 20,
+    "actionType": "ACTION_FREEZE_GOALS",
+    "dailyTargetQuestions": 0,
+    "dailyTargetDurationMinutes": 0,
     "validUntil": "2026-10-20T23:59:59Z"
   }
 }
