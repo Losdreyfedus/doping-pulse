@@ -76,19 +76,19 @@ Operasyon ve ürün ekipleri için 3 ana dashboard paneli kurgulanmıştır:
 
 ```mermaid
 graph TD
-    subgraph Dashboard 1: Executive Pulse Health
+    subgraph D1 ["Dashboard 1 · Executive"]
         D1A["Öğrenci Durum Dağılımı (Donut Chart)"]
         D1B["Durum Geçiş Trendleri (Time Series)"]
         D1C["Günlük Kurtarılan Öğrenci Sayısı (Restart -> Steady)"]
     end
 
-    subgraph Dashboard 2: Product & Conversion Funnel
+    subgraph D2 ["Dashboard 2 · Ürün Hunisi"]
         D2A["Müdahale Kartı Tıklanma Oranı (CTR %)"]
         D2B["Kart Tamamlama Oranı (Completion Rate %)"]
         D2C["Kopuş Nedenleri Dağılımı (Bar Chart)"]
     end
 
-    subgraph Dashboard 3: SRE & Engine Reliability
+    subgraph D3 ["Dashboard 3 · SRE"]
         D3A["P95 & P99 HTTP Latency (ms)"]
         D3B["Kafka Consumer Lag & Throughput"]
         D3C["PostgreSQL Query Execution Times & Lock Waits"]

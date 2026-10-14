@@ -204,7 +204,7 @@ flowchart LR
         O[INSERT pulse_outbox]
     end
     TX --> R[Outbox Relay]
-    R -->|Partition Key = aggregate_id| K[(Kafka: pulse.*)]
+    R -->|key = studentId| K[(Kafka: pulse.*)]
     K --> D[Downstream: Push / CRM / SMS]
     D -.->|eventId ile dedup| D
 ```

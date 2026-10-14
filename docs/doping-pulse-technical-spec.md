@@ -29,21 +29,34 @@ Karar motoru iki kaynaktan beslenir:
 
 ```mermaid
 stateDiagram-v2
-    [*] --> ACTIVATE: Kayıt Oldu / Paket Başladı
+    [*] --> ACTIVATE: (1) Kayıt
     
-    ACTIVATE --> STEADY: İlk Anlamlı Aktivite (Video ≥%80 ve ≥180 sn VEYA ≥5 Soru)
-    ACTIVATE --> ACTIVATE: Aktivite Yok (Düşük eşikli mikro-görev devam eder)
+    ACTIVATE --> STEADY: (2) Aha! Moment
+    ACTIVATE --> ACTIVATE: (3) Aktivite yok
     
-    STEADY --> BOOST: Tempoda Düşüş (Haftalık Hedef < %50 veya Seri Bozulması)
-    STEADY --> RESTART: Ani Kopuş (Kişisel eşik: ardışık 4-7 gün sıfır aktivite)
+    STEADY --> BOOST: (4) Tempo düştü
+    STEADY --> RESTART: (5) Ani kopuş
     
-    BOOST --> STEADY: Ritim Geri Geldi (Ardışık 3 başarılı gün)
-    BOOST --> RESTART: Düşüş Devam Etti (Ardışık 5+ gün sıfır aktivite)
+    BOOST --> STEADY: (6) Ritim geri geldi
+    BOOST --> RESTART: (7) Kopuş sürdü
     
-    RESTART --> ACTIVATE: Check-in = OTHER (Temiz sayfa)
-    RESTART --> BOOST: Check-in = BURNOUT (Hedefler %60 hafifletildi)
-    RESTART --> STEADY: Ardışık 4 başarılı gün
+    RESTART --> ACTIVATE: (8) Temiz sayfa
+    RESTART --> BOOST: (9) Hafif dönüş
+    RESTART --> STEADY: (10) Toparlandı
 ```
+
+| # | Geçiş | Koşul (normatif tanım: [RFC-001 §3](state-machine-and-rules.md)) |
+| :---: | :--- | :--- |
+| 1 | `[*] → ACTIVATE` | Paket satın alındı (`account.student.enrolled`) |
+| 2 | `ACTIVATE → STEADY` | Bir videonun $\ge \%80$'i ve $\ge 180\text{ sn}$'si izlendi **VEYA** kümülatif $\ge 5$ soru çözüldü |
+| 3 | `ACTIVATE → ACTIVATE` | Aktivite yok; düşük eşikli mikro-görev devam eder (7. günde `ACTIVATE_CRITICAL`) |
+| 4 | `STEADY → BOOST` | Son 7 günde efektif hedef tamamlama $<\%50$ **VEYA** seri bozulması |
+| 5 | `STEADY → RESTART` | Kişisel eşik aşıldı: ardışık 4–7 gün sıfır aktivite (RFC-001 §4.5) |
+| 6 | `BOOST → STEADY` | Ardışık 3 başarılı gün (efektif hedefin $\ge \%80$'i) |
+| 7 | `BOOST → RESTART` | Ardışık $\ge 5$ gün sıfır aktivite |
+| 8 | `RESTART → ACTIVATE` | Check-in yanıtı `OTHER` |
+| 9 | `RESTART → BOOST` | Check-in yanıtı `BURNOUT` (hedefler %60 hafifletilir) **VEYA** adaptasyon süresi toparlanma olmadan doldu |
+| 10 | `RESTART → STEADY` | Ardışık 4 başarılı gün |
 
 ### Karar Kuralları ve Eşik Değerleri (Rule Matrix)
 

@@ -103,20 +103,28 @@ ReStart durumundaki bir öğrenci mini anketi yanıtladığında (`POST /pulse/c
 
 ```mermaid
 stateDiagram-v2
-    [*] --> ASSIGNED: Motor Kartı Üretti
-    ASSIGNED --> VIEWED: Ekranda Görüntülendi (Impression)
+    [*] --> ASSIGNED: Kart üretildi
+    ASSIGNED --> VIEWED: Görüntülendi
     
-    VIEWED --> INTERACTED: Butona Tıklandı (Click CTA)
-    INTERACTED --> COMPLETED: Hedef Eylem Tamamlandı (Başarı!)
+    VIEWED --> INTERACTED: CTA tıklandı
+    INTERACTED --> COMPLETED: Eylem tamamlandı
     
-    VIEWED --> DISMISSED: Öğrenci 'X' İle Kapattı
-    ASSIGNED --> EXPIRED: 24 Saat Geçti (TTL Aşımı)
-    VIEWED --> EXPIRED: 24 Saat Geçti (TTL Aşımı)
+    VIEWED --> DISMISSED: X ile kapatıldı
+    ASSIGNED --> EXPIRED: 24 sa doldu
+    VIEWED --> EXPIRED: 24 sa doldu
     
-    DISMISSED --> [*]: Soğuma Periyodu Başlar (Backoff)
-    COMPLETED --> [*]: Ödül / Streak Tetiklenir
-    EXPIRED --> [*]: Arşive Taşınır
+    DISMISSED --> [*]: Backoff başlar
+    COMPLETED --> [*]: Ödül / streak
+    EXPIRED --> [*]: Arşivlenir
 ```
+
+| Geçiş | Tetikleyici Olay | Açıklama |
+| :--- | :--- | :--- |
+| `ASSIGNED → VIEWED` | `IMPRESSION` | Kart mobil ana ekranda görüntülendi |
+| `VIEWED → INTERACTED` | `CLICK_CTA` | Öğrenci kartın butonuna bastı |
+| `INTERACTED → COMPLETED` | `COMPLETE` | Kartın hedeflediği eylem (video, test, anket) tamamlandı; ödül/streak tetiklenir |
+| `VIEWED → DISMISSED` | `DISMISS` | Öğrenci kartı kapattı; soğuma periyodu (backoff) başlar (§5.1) |
+| `ASSIGNED / VIEWED → EXPIRED` | Gece temizlik işi | 24 saatlik TTL doldu; kart arşivlenir |
 
 ### 5.1. Sönümleme ve Soğuma Kuralları (Backoff Matrix)
 1. **Günde En Fazla 1 Aktif Müdahale:** Öğrenciye aynı gün içinde asla birden fazla müdahale kartı sunulmaz (`active_intervention_id` doluyken yeni kart üretilmez).
