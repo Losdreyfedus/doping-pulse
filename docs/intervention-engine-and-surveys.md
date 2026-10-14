@@ -1,0 +1,124 @@
+# 🎯 Doping Pulse: Müdahale Motoru ve Anket Orkestrasyonu Spesifikasyonu (Intervention RFC)
+
+**Doküman Kodu:** `RFC-PULSE-004`  
+**Modül:** `Pulse Intervention & Content Recommendation Engine`  
+**Mimar:** Senior Backend Architect & MT Core Team  
+**Amacı:** Öğrencinin bulunduğu duruma (`ACTIVATE`, `BOOST`, `RESTART`) göre en doğru mikro-görevi, adaptasyonu veya check-in anketini dinamik olarak üreten ve yöneten içerik orkestrasyonu.
+
+---
+
+## 1. Mimari Rol ve Sorumluluk Ayrımı
+
+State Machine (`RFC-001`), öğrencinin durumunun ne olduğuna karar verir (Örn: `RESTART_CHECKIN_PENDING`).  
+**Müdahale Motoru (Intervention Engine)** ise şu soruları çözer:
+1. *"Bu öğrenciye tam olarak hangi kartı göstermeliyiz?"*
+2. *"Kartın başlığı, butonu ve yönlendireceği deep link ne olmalı?"* (Örn: Hangi ders, hangi video?)
+3. *"Öğrenci anketi yanıtladığında platform öğrencinin hedeflerini arka planda nasıl dönüştürmeli?"*
+
+```mermaid
+flowchart LR
+    A[State Machine: Durum Değişti] --> B[Intervention Engine: Karar Tetiklendi]
+    B --> C[Öğrenci Geçmiş Verisi & Tercihleri Çek]
+    C --> D[Dinamik Şablon Motoru: Parametreleri Yerleştir]
+    D --> E[pulse_student_interventions Tablosuna Yaz]
+    E --> F[Mobil Ana Ekranda Render Edilmeye Hazır]
+```
+
+---
+
+## 2. Müdahale Tipleri ve İçerik Kataloğu
+
+Sistem 4 temel müdahale arketipini destekler:
+
+### 2.1. `MICRO_TASK` (Düşük Eşikli Mikro-Görev)
+* **Kullanıldığı Durumlar:** `ACTIVATE`, `RESTART_ADAPTED`
+* **Prensip:** Bilişsel yükü minimuma indirmek. Öğrenciye 2 saatlik ders programı dayatmak yerine "Sadece 4 dakika" diyerek eylemsizlik eşiğini kırmak.
+* **Seçim Algoritması:**
+  * Eğer öğrenci `ACTIVATE` aşamasındaysa: Müfredatın en popüler ve temel seviye giriş dersi seçilir (Örn: Matematik $\rightarrow$ "Temel Kavramlar 1").
+  * Eğer öğrenci `RESTART` sonrası dönüş yapıyorsa: Kopmadan önce en son $\ge \%50$ izleyip bıraktığı videonun kalan kısmı önerilir.
+
+### 2.2. `GOAL_ADAPTATION` (Dinamik Hedef Uyarlama)
+* **Kullanıldığı Durumlar:** `BOOST_LOW_PACE`, `BOOST_STREAK_BROKEN`
+* **Prensip:** Birikmiş ödev ve hedef baskısını hafifletmek.
+* **Uygulama:** Günlük hedef soru sayısı otomatik olarak $\%40$ kırpılır. Kart öğrenciye suçluluk hissettirmeden gösterilir:  
+  *"Bugün yükünü hafiflettik. 25 soru yerine sadece 12 soru çözerek ritmini koru!"*
+
+### 2.3. `CHECK_IN_SURVEY` (Kök Neden Anket Kartı)
+* **Kullanıldığı Durumlar:** `RESTART_CHECKIN_PENDING`
+* **Prensip:** Yargılamadan neden koptuğunu sormak ve öğrencinin seçtiği cevaba göre platformu öğrenciye uydurmak.
+
+### 2.4. `MOTIVATION_CARD` (Streak & Tebrik Kartı)
+* **Kullanıldığı Durumlar:** `STEADY_STREAK_HERO`
+* **Prensip:** Mikro ödül mekanizması. Müdahale değil, pozitif pekiştirme (Örn: "3 gündür seridesin, ritmin harika gidiyor!").
+
+---
+
+## 3. Dinamik Şablon Enterpolasyonu (Template Interpolation Engine)
+
+Müdahale motoru, veritabanındaki şablon metinlerini öğrencinin bağlamına göre dinamik olarak zenginleştirir.
+
+### Desteklenen Değişkenler:
+| Değişken | Açıklama | Örnek Çıktı |
+| :--- | :--- | :--- |
+| `{{student.first_name}}` | Öğrencinin adı | "Ahmet" |
+| `{{content.lesson_title}}` | Önerilen dersin adı | "Problemler - Sayı Kesir" |
+| `{{content.duration_min}}` | Videonun kalan veya toplam süresi | "4" |
+| `{{target.reduced_count}}` | Hafifletilmiş soru hedefi | "10" |
+| `{{target.original_count}}` | Orijinal soru hedefi | "25" |
+
+### Örnek Şablon Tanımı (`pulse_intervention_templates`):
+```json
+{
+  "templateId": "ACTIVATE_MICRO_VIDEO_V1",
+  "titleTemplate": "Selam {{student.first_name}}, sadece {{content.duration_min}} dakikanı ayır!",
+  "bodyTemplate": "Büyük programları unut. Bugün sadece {{content.lesson_title}} videosunu izleyerek ilk adımı atalım.",
+  "ctaText": "Hemen Başla ({{content.duration_min}} Dk)",
+  "ctaDeepLink": "doping://lesson/{{content.lesson_id}}"
+}
+```
+
+---
+
+## 4. ReStart Check-In Anketi ve Eylem Haritası (Survey-to-Action Matrix)
+
+ReStart durumundaki bir öğrenci mini anketi yanıtladığında (`POST /pulse/checkins`), arka planda çalışan **Adaptasyon Orkestratörü (Adaptation Orchestrator)** otomatik eylemler tetikler:
+
+| Anket Seçeneği | Açıklama | Tetiklenen Backend Eylemi (Action) | Öğrenciye Verilen Geri Bildirim |
+| :--- | :--- | :--- | :--- |
+| **`SCHOOL_EXAMS`** | "Okul sınavlarım / yazılılarım çok yoğundu." | **`ACTION_FREEZE_GOALS(days: 7)`**<br>Haftalık hedefler 7 gün dondurulur, öğrenciye sadece konu özet hapları açılır. | *"Sınav haftanı biliyoruz! Doping hedeflerini 7 gün dondurduk, sınavlarına odaklan."* |
+| **`SUBJECT_DIFFICULTY`** | "Son çalıştığım konuyu anlamadım, moralim bozuldu." | **`ACTION_INJECT_PREREQUISITE(topic_id)`**<br>Zorlandığı konunun temel hazırlık videosu ve 3 kolay pekiştirme sorusu öne çıkarılır. | *"Zorlanman çok normal. Konunun temelini 5 dakikada anlatan hap videoyu hazırladık."* |
+| **`BURNOUT`** | "Çok yoruldum, tempomu koruyamadım." | **`ACTION_SCALE_TARGETS(factor: 0.4, days: 5)`**<br>Hedefler 5 günlüğüne $\%60$ hafifletilir. | *"Biraz nefes alma vakti! Günlük hedefini 10 soruya indirdik, ritmi kaybetme yeter."* |
+| **`TECHNICAL_ISSUE`** | "Uygulamada teknik bir sorun yaşadım." | **`ACTION_ESCALATE_SUPPORT(priority: HIGH)`**<br>Müşteri destek CRM'ine anında yüksek öncelikli çağrı bileti (ticket) açılır. | *"Teknik aksaklık için özür dileriz! Destek ekibimiz hemen seninle iletişime geçecek."* |
+| **`OTHER`** | "Kişisel / Başka bir neden." | **`ACTION_RESET_TO_ACTIVATE`**<br>Program sıfırlanır ve öğrenciye "Temiz bir sayfa aç" seçeneği sunulur. | *"Hiç sorun değil. İstediğin zaman temiz bir sayfayla sıfırdan başlayabilirsin."* |
+
+---
+
+## 5. Müdahale Yaşam Döngüsü ve Sönümleme (Lifecycle & Backoff Engine)
+
+Öğrencinin arayüzde kart spam'ine maruz kalmaması ve **bildirim yorgunluğuna (Intervention Fatigue)** girmemesi için şu kurallar katı şekilde işletilir:
+
+```mermaid
+stateDiagram-v2
+    [*] --> ASSIGNED: Motor Kartı Üretti
+    ASSIGNED --> VIEWED: Ekranda Görüntülendi (Impression)
+    
+    VIEWED --> INTERACTED: Butona Tıklandı (Click CTA)
+    INTERACTED --> COMPLETED: Hedef Eylem Tamamlandı (Başarı!)
+    
+    VIEWED --> DISMISSED: Öğrenci 'X' İle Kapattı
+    ASSIGNED --> EXPIRED: 24 Saat Geçti (TTL Aşımı)
+    VIEWED --> EXPIRED: 24 Saat Geçti (TTL Aşımı)
+    
+    DISMISSED --> [*]: Soğuma Periyodu Başlar (Backoff)
+    COMPLETED --> [*]: Ödül / Streak Tetiklenir
+    EXPIRED --> [*]: Arşive Taşınır
+```
+
+### 5.1. Sönümleme ve Soğuma Kuralları (Backoff Matrix)
+1. **Günde En Fazla 1 Aktif Müdahale:** Öğrenciye aynı gün içinde asla birden fazla müdahale kartı sunulmaz (`active_intervention_id` doluyken yeni kart üretilmez).
+2. **Kapatma Cezası (Dismissal Backoff):**
+   * **1. Kapatma:** Sistem 24 saat boyunca yeni müdahale üretmez.
+   * **2. Kapatma:** Sistem 48 saat boyunca yeni müdahale üretmez.
+   * **3. Kapatma:** Sistem o öğrenci için push ve modal bildirimleri tamamen keser; müdahaleyi yalnızca ana ekranın en altında pasif bir "Tavsiye" kutusuna indirger.
+3. **Kart Yaşam Süresi (TTL - Time to Live):** Bir kart üretildikten sonra en fazla **24 saat** geçerlidir. 24 saat içinde tamamlanmayan kartlar gece temizlik işiyle otomatik olarak `EXPIRED` durumuna alınır.
+

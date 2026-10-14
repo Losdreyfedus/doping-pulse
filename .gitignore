@@ -1,0 +1,44 @@
+# Operating System Files
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# IDE & Editor Settings
+.idea/
+.vscode/
+*.swp
+*.swo
+*.sublime-project
+*.sublime-workspace
+
+# Logs & Temporary Data
+*.log
+logs/
+tmp/
+temp/
+scratch/
+
+# Node / JS (Frontend & Mocking)
+node_modules/
+dist/
+build/
+.npm
+.yarn/
+
+# Python / Data Scripts
+__pycache__/
+*.py[cod]
+*$py.class
+.venv/
+env/
+venv/
+.pytest_cache/
+
+# Environment Variables & Secrets
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+
+docs/mentor-presentation-deck-outline.md

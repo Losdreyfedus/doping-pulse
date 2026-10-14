@@ -1,0 +1,609 @@
+openapi: 3.0.3
+info:
+  title: Doping Pulse RESTful API
+  version: 1.0.0
+  description: |
+    **Doping Pulse - Akıllı Öğrenci Durum & Proaktif Müdahale Altyapısı**
+    Öğrencinin platformdaki öğrenme alışkanlıklarını analiz ederek (Activate, Boost, ReStart, Steady) doğru anda doğru müdahaleyi sunan karar motoru API spesifikasyonu.
+  contact:
+    name: Doping Pulse Core Engineering Team
+    email: dev-team@dopinghafiza.com
+
+servers:
+  - url: https://api.dopinghafiza.com
+    description: Production Gateway
+  - url: https://staging-api.dopinghafiza.com
+    description: Staging Environment
+  - url: http://localhost:8080
+    description: Local Development / Mock Server
+
+security:
+  - BearerAuth: []
+
+paths:
+  /pulse/v1/pulse/me/status:
+    get:
+      tags:
+        - Student Client API
+      summary: Öğrencinin Güncel Nabız Durumu ve Aktif Kartı
+      description: Mobil veya web ana sayfası açıldığında öğrencinin durumunu ve gösterilmesi gereken mikro-görev/anket kartını döner.
+      operationId: getMyPulseStatus
+      responses:
+        '200':
+          description: Başarılı nabız durumu yanıtı
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StudentPulseSummaryDTO'
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+  /pulse/v1/pulse/interventions/{interventionId}/events:
+    post:
+      tags:
+        - Student Client API
+      summary: Müdahale Kartı Etkileşim Telemetrisi
+      description: Kart görüntülendiğinde (impression), tıklandığında (click), kapatıldığında (dismiss) veya görev tamamlandığında (complete) çağrılır.
+      operationId: recordInterventionEvent
+      parameters:
+        - $ref: '#/components/parameters/InterventionId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/InterventionEventRequest'
+      responses:
+        '204':
+          description: Olay başarıyla kaydedildi
+        '400':
+          $ref: '#/components/responses/BadRequestError'
+        '404':
+          $ref: '#/components/responses/NotFoundError'
+        '409':
+          $ref: '#/components/responses/ConflictError'
+
+  /pulse/v1/pulse/checkins/{surveyId}:
+    get:
+      tags:
+        - Student Client API
+      summary: ReStart Anket Sorularını Getir
+      description: ReStart durumundaki öğrenciye gösterilecek anketin soru ve seçeneklerini döner.
+      operationId: getCheckInSurvey
+      parameters:
+        - $ref: '#/components/parameters/SurveyId'
+      responses:
+        '200':
+          description: Anket başarıyla getirildi
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CheckInSurveyDTO'
+        '404':
+          $ref: '#/components/responses/NotFoundError'
+
+  /pulse/v1/pulse/checkins:
+    post:
+      tags:
+        - Student Client API
+      summary: ReStart Anketi Yanıtı ve Program Uyarlama
+      description: Öğrencinin anket cevabını işler, kök nedeni kaydeder ve hedefleri anında hafifletip/dondurarak geri bildirim döner.
+      operationId: submitCheckInResponse
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CheckInSubmissionRequest'
+      responses:
+        '200':
+          description: Anket işlendi ve program uyarlandı
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CheckInResponseDTO'
+        '400':
+          $ref: '#/components/responses/BadRequestError'
+
+  /pulse/v1/pulse/me/pause:
+    post:
+      tags:
+        - Student Client API
+      summary: Pulse Takibini Geçici Olarak Dondur (Bypass)
+      description: Öğrencinin sınav haftası veya hastalık nedeniyle sistemi geçici olarak dondurmasını sağlar.
+      operationId: pausePulseTracking
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PauseRequest'
+      responses:
+        '200':
+          description: Sistem belirtilen süre boyunca donduruldu
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PauseResponse'
+
+  /pulse/v1/internal/pulse/evaluate/{studentId}:
+    post:
+      tags:
+        - Internal Engine API
+      summary: Anlık Kural Motoru Değerlendirmesi
+      description: Core servislerden gelen olaylar sonucu öğrencinin durumunu asenkron olarak yeniden değerlendirir.
+      security:
+        - InternalKeyAuth: []
+      parameters:
+        - $ref: '#/components/parameters/StudentId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/InternalEvaluationRequest'
+      responses:
+        '200':
+          description: Değerlendirme tamamlandı
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/InternalEvaluationResponse'
+
+  /pulse/v1/internal/pulse/batch/nightly-evaluation:
+    post:
+      tags:
+        - Internal Engine API
+      summary: Gece Toplu İnaktivite Taraması
+      description: Her gece 03:00'te CronJob ile tetiklenen toplu durum güncelleme işi.
+      security:
+        - InternalKeyAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/NightlyBatchRequest'
+      responses:
+        '202':
+          description: Toplu iş kuyruğa alındı
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/NightlyBatchResponse'
+
+  /pulse/v1/internal/pulse/students/{studentId}/timeline:
+    get:
+      tags:
+        - Internal Engine API
+      summary: Öğrenci Nabız Tarihçesi ve Zaman Çizelgesi
+      description: Koçluk CRM ve veli destek panelleri için öğrencinin son 30 günlük durum geçmişini döner.
+      security:
+        - InternalKeyAuth: []
+      parameters:
+        - $ref: '#/components/parameters/StudentId'
+      responses:
+        '200':
+          description: Tarihçe başarıyla getirildi
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StudentTimelineResponse'
+
+components:
+  securitySchemes:
+    BearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: Öğrenci OAuth2 JWT Token
+    InternalKeyAuth:
+      type: apiKey
+      in: header
+      name: X-Internal-Service-Key
+      description: Dahili mikroservisler arası gizli anahtar
+
+  parameters:
+    InterventionId:
+      name: interventionId
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+      example: "018f3a2b-7c4d-7a89-9e12-3456789abcde"
+    SurveyId:
+      name: surveyId
+      in: path
+      required: true
+      schema:
+        type: string
+      example: "RESTART_CORE_V1"
+    StudentId:
+      name: studentId
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+      example: "c3a1b8d2-45e0-4789-9a21-998877665544"
+    IdempotencyKey:
+      name: Idempotency-Key
+      in: header
+      required: false
+      schema:
+        type: string
+        format: uuid
+      example: "7c5a0b94-82a1-4235-9081-30c8df634f51"
+
+  schemas:
+    StudentPulseSummaryDTO:
+      type: object
+      required:
+        - studentId
+        - pulseState
+        - pulseSubState
+        - consecutiveInactiveDays
+        - streakDays
+        - isPaused
+      properties:
+        studentId:
+          type: string
+          format: uuid
+        pulseState:
+          type: string
+          enum: [ACTIVATE, BOOST, RESTART, STEADY]
+        pulseSubState:
+          type: string
+          enum:
+            - ACTIVATE_ONBOARDING
+            - ACTIVATE_STALLED
+            - ACTIVATE_CRITICAL
+            - BOOST_STREAK_BROKEN
+            - BOOST_LOW_PACE
+            - BOOST_BURNOUT_RISK
+            - RESTART_CHECKIN_PENDING
+            - RESTART_ADAPTED
+            - RESTART_UNRESPONSIVE
+            - STEADY_NORMAL
+            - STEADY_STREAK_HERO
+        consecutiveInactiveDays:
+          type: integer
+          example: 0
+        streakDays:
+          type: integer
+          example: 4
+        isPaused:
+          type: boolean
+          example: false
+        activeIntervention:
+          $ref: '#/components/schemas/InterventionCardDTO'
+          nullable: true
+
+    InterventionCardDTO:
+      type: object
+      required:
+        - interventionId
+        - templateId
+        - type
+        - badgeText
+        - title
+        - description
+        - cta
+        - expiresAt
+      properties:
+        interventionId:
+          type: string
+          format: uuid
+        templateId:
+          type: string
+          example: "ACTIVATE_FIRST_5M_VIDEO"
+        type:
+          type: string
+          enum: [MICRO_TASK, GOAL_ADAPTATION, CHECK_IN_SURVEY, MOTIVATION_CARD]
+        badgeText:
+          type: string
+          example: "Günün Kolay Adımı"
+        title:
+          type: string
+          example: "Bugün sadece bu 4 dakikalık videoyu izle"
+        description:
+          type: string
+          example: "Programın gözünde büyümesine gerek yok. Sadece bir başlangıç yapıyoruz."
+        cta:
+          type: object
+          required: [text, actionType, payload]
+          properties:
+            text:
+              type: string
+              example: "Videoya Git (4 Dk)"
+            actionType:
+              type: string
+              enum: [DEEP_LINK, MODAL_SURVEY, MUTATION]
+            payload:
+              type: string
+              example: "doping://content/lesson/mat-temel-kavramlar"
+        dismissible:
+          type: boolean
+          default: true
+        expiresAt:
+          type: string
+          format: date-time
+
+    InterventionEventRequest:
+      type: object
+      required:
+        - eventType
+      properties:
+        eventType:
+          type: string
+          enum: [IMPRESSION, CLICK_CTA, DISMISS, COMPLETE]
+        clientTimestamp:
+          type: string
+          format: date-time
+        metadata:
+          type: object
+          additionalProperties: true
+
+    CheckInSurveyDTO:
+      type: object
+      required:
+        - surveyId
+        - title
+        - promptText
+        - options
+      properties:
+        surveyId:
+          type: string
+        title:
+          type: string
+        promptText:
+          type: string
+        options:
+          type: array
+          items:
+            type: object
+            required: [key, label]
+            properties:
+              key:
+                type: string
+                example: "SCHOOL_EXAMS"
+              label:
+                type: string
+                example: "Okul sınavlarım / yazılılarım çok yoğundu"
+              icon:
+                type: string
+                example: "school_calendar"
+
+    CheckInSubmissionRequest:
+      type: object
+      required:
+        - interventionId
+        - surveyId
+        - selectedOptionKey
+      properties:
+        interventionId:
+          type: string
+          format: uuid
+        surveyId:
+          type: string
+        selectedOptionKey:
+          type: string
+          enum: [SCHOOL_EXAMS, SUBJECT_DIFFICULTY, BURNOUT, TECHNICAL_ISSUE, OTHER]
+        freeTextNote:
+          type: string
+          maxLength: 500
+        requestedAdaptation:
+          type: string
+          enum: [REDUCE_LOAD_50_PERCENT, FREEZE_1_WEEK, RESTART_FRESH]
+
+    CheckInResponseDTO:
+      type: object
+      required:
+        - success
+        - feedbackMessage
+        - newPulseState
+        - newPulseSubState
+      properties:
+        success:
+          type: boolean
+          example: true
+        feedbackMessage:
+          type: string
+          example: "Seni çok iyi anlıyoruz! Hedeflerini 1 hafta boyunca %50 hafiflettik."
+        newPulseState:
+          type: string
+          enum: [ACTIVATE, BOOST, RESTART, STEADY]
+        newPulseSubState:
+          type: string
+        appliedAdaptation:
+          type: object
+          properties:
+            actionType:
+              type: string
+              example: "SCHEDULE_HALVED"
+            dailyTargetQuestions:
+              type: integer
+              example: 10
+            dailyTargetDurationMinutes:
+              type: integer
+              example: 20
+            validUntil:
+              type: string
+              format: date-time
+
+    PauseRequest:
+      type: object
+      required:
+        - durationDays
+        - reason
+      properties:
+        durationDays:
+          type: integer
+          minimum: 1
+          maximum: 14
+          example: 4
+        reason:
+          type: string
+          enum: [MEDICAL_OR_HOLIDAY, SCHOOL_EXAMS, OTHER]
+
+    PauseResponse:
+      type: object
+      properties:
+        isPaused:
+          type: boolean
+          example: true
+        pausedUntil:
+          type: string
+          format: date-time
+        message:
+          type: string
+
+    InternalEvaluationRequest:
+      type: object
+      required:
+        - eventSource
+        - eventType
+      properties:
+        eventSource:
+          type: string
+          example: "LESSON_SERVICE"
+        eventType:
+          type: string
+          example: "VIDEO_WATCHED"
+        eventPayload:
+          type: object
+          additionalProperties: true
+
+    InternalEvaluationResponse:
+      type: object
+      properties:
+        studentId:
+          type: string
+          format: uuid
+        evaluated:
+          type: boolean
+        stateChanged:
+          type: boolean
+        previousState:
+          type: string
+        newState:
+          type: string
+        transitionReason:
+          type: string
+        auditLogId:
+          type: integer
+
+    NightlyBatchRequest:
+      type: object
+      required:
+        - executionDate
+      properties:
+        executionDate:
+          type: string
+          format: date
+        chunkSize:
+          type: integer
+          default: 500
+        dryRun:
+          type: boolean
+          default: false
+
+    NightlyBatchResponse:
+      type: object
+      properties:
+        jobId:
+          type: string
+        status:
+          type: string
+        message:
+          type: string
+
+    StudentTimelineResponse:
+      type: object
+      properties:
+        studentId:
+          type: string
+          format: uuid
+        currentState:
+          type: string
+        currentSubState:
+          type: string
+        timeline:
+          type: array
+          items:
+            type: object
+            properties:
+              date:
+                type: string
+                format: date-time
+              fromState:
+                type: string
+              toState:
+                type: string
+              trigger:
+                type: string
+              reason:
+                type: string
+
+    ProblemDetails:
+      type: object
+      required:
+        - type
+        - title
+        - status
+        - detail
+      properties:
+        type:
+          type: string
+          format: uri
+        title:
+          type: string
+        status:
+          type: integer
+        detail:
+          type: string
+        instance:
+          type: string
+        code:
+          type: string
+        timestamp:
+          type: string
+          format: date-time
+
+  responses:
+    BadRequestError:
+      description: Geçersiz istek parametresi
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/ProblemDetails'
+    UnauthorizedError:
+      description: Geçersiz veya eksik JWT Token
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/ProblemDetails'
+    NotFoundError:
+      description: Kaynak bulunamadı
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/ProblemDetails'
+    ConflictError:
+      description: İşlem çakışması (Örn: Zaten tamamlanmış kart)
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/ProblemDetails'
+    InternalServerError:
+      description: Sunucu içi beklenmeyen hata
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/ProblemDetails'
+
