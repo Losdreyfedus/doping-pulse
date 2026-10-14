@@ -2,7 +2,7 @@
 
 **Doküman Kodu:** `RFC-PULSE-003`  
 **Modül:** `Pulse Gateway & Service Contracts`  
-**Mimar:** Senior Backend Architect & MT Core Team  
+**Yazar:** Hamza Kar  
 **Protokol:** HTTPS / RESTful JSON / OpenAPI 3.0 Standardı  
 **Base URL:** `https://api.dopinghafiza.com/pulse/v1`  
 

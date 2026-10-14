@@ -2,7 +2,7 @@
 
 **Doküman Kodu:** `RFC-PULSE-005`  
 **Modül:** `Pulse Escalation & Stakeholder Notification Engine`  
-**Mimar:** Senior Backend Architect & MT Core Team  
+**Yazar:** Hamza Kar  
 **Kapsam:** Dijital mikro-müdahalelere yanıt vermeyen veya kritik kopuş eşiğini aşan öğrenciler için insan faktörünü (Doping Koçu & Veli) devreye sokan kademeli alarm altyapısı.
 
 ---

@@ -1,7 +1,7 @@
 # Doping Pulse: Backend Teknik Tasarım Dokümanı (Technical Specification / RFC)
 
 **Versiyon:** 1.0.0  
-**Yazar:** Senior Backend Engineer & MT Core Team  
+**Yazar:** Hamza Kar  
 **Hedef Sistem:** Doping Hafıza Öğrenci Etkileşim & Müdahale Altyapısı (Pulse Engine)  
 **Durum:** Draft / Review  
 
@@ -90,27 +90,43 @@ erDiagram
 
 ## 4. Obje Modelleri (Domain Objects & Data Transfer Objects)
 
+> **Kaynak Kuralı:** İstemciye dönen DTO'ların normatif tanımı [OpenAPI sözleşmesidir](openapi-swagger-spec.yaml) (`components/schemas`). Dahili motor objeleri (§4.3, §4.4) RFC-001 §6'daki pseudo-code ile birebir eşleşir. TypeScript'te `camelCase`, pseudo-code ve DB'de `snake_case` kullanılır.
+
+```typescript
+type PulseState = 'ACTIVATE' | 'BOOST' | 'RESTART' | 'STEADY';
+type PulseSubState =
+  | 'ACTIVATE_ONBOARDING' | 'ACTIVATE_STALLED' | 'ACTIVATE_CRITICAL'
+  | 'BOOST_STREAK_BROKEN' | 'BOOST_LOW_PACE' | 'BOOST_BURNOUT_RISK'
+  | 'RESTART_CHECKIN_PENDING' | 'RESTART_ADAPTED' | 'RESTART_UNRESPONSIVE'
+  | 'STEADY_NORMAL' | 'STEADY_STREAK_HERO';
+```
+
 ### 4.1. `StudentPulseSummaryDTO` (Mobil / Web Ana Ekrana Dönen Obje)
 ```typescript
 interface StudentPulseSummaryDTO {
   studentId: string;
-  pulseState: 'ACTIVATE' | 'BOOST' | 'RESTART' | 'STEADY';
+  pulseState: PulseState;
+  pulseSubState: PulseSubState;
+  consecutiveInactiveDays: number;
   streakDays: number;
-  activeIntervention: InterventionCardDTO | null;
+  isPaused: boolean;
+  activeIntervention: InterventionCardDTO | null;   // Günde en fazla 1 aktif kart (RFC-004 §5.1)
 }
 
 interface InterventionCardDTO {
-  interventionId: string;
+  interventionId: string;   // UUIDv7
+  templateId: string;       // Örn: "ACTIVATE_FIRST_5M_VIDEO"
   type: 'MICRO_TASK' | 'GOAL_ADAPTATION' | 'CHECK_IN_SURVEY' | 'MOTIVATION_CARD';
-  badgeTitle: string;       // Örn: "Günün Kolay Adımı" veya "Hızlı Check-in"
-  title: string;            // Örn: "Bugün Sadece 1 Konu Özeti"
-  description: string;      // Örn: "5 dakikanı ayır, seriyi bozmadan devam et."
+  badgeText: string;        // Örn: "Günün Kolay Adımı" veya "Hızlı Check-in"
+  title: string;            // Örn: "Bugün sadece bu 4 dakikalık videoyu izle"
+  description: string;      // Örn: "Programın gözünde büyümesine gerek yok."
   cta: {
-    text: string;           // "Başla (5 dk)"
-    actionType: 'DEEP_LINK' | 'OPEN_SURVEY' | 'ACCEPT_ADAPTATION';
-    targetPayload: string;  // "doping://content/video/12345" veya surveyId
+    text: string;           // "Videoya Git (4 Dk)"
+    actionType: 'DEEP_LINK' | 'MODAL_SURVEY' | 'MUTATION';
+    payload: string;        // "doping://content/lesson/mat-temel-kavramlar" veya surveyId
   };
-  expiresAt: string;        // ISO-8601
+  dismissible: boolean;     // Varsayılan: true
+  expiresAt: string;        // ISO-8601, en fazla 24 saat (RFC-004 §5.1)
 }
 ```
 
@@ -126,29 +142,73 @@ interface CheckInSurveySubmissionDTO {
 ```
 
 ### 4.3. `PulseEvaluationContext` (Karar Motoruna Giren Dahili Veri Objesi)
+Motor her değerlendirmede bu objeyi `pulse_student_states` ve `pulse_daily_aggregates` (son 21 gün) üzerinden tek seferde oluşturur. Değerlendirme fonksiyonu yalnızca bu objeyi okur; DB'ye tekrar gitmez, bu da onu saf (pure) ve test edilebilir kılar.
+
 ```typescript
 interface PulseEvaluationContext {
   studentId: string;
-  currentState: 'ACTIVATE' | 'BOOST' | 'RESTART' | 'STEADY';
+
+  // --- Mevcut durum (pulse_student_states) ---
+  currentState: PulseState;
+  currentSubState: PulseSubState;
+  stateUpdatedAt: string;               // Cooldown hesabı (48 saat)
+  isPaused: boolean;
+  pausedUntil: string | null;
+  adaptationExpiresAt: string | null;   // RESTART_ADAPTED / BOOST_BURNOUT_RISK bitişi
+  experimentArm: 'TREATMENT' | 'HOLDOUT'; // Motor okumaz; Müdahale Motoru okur (RFC-004 §1)
+  version: number;                      // Optimistic Locking için beklenen sürüm
+
+  // --- ACTIVATE / Aha! Moment (RFC-001 §4.1) ---
   daysSinceEnrollment: number;
+  lifetimeActiveSeconds: number;
+  lifetimeQuestionsSolved: number;
+  bestLessonCompletionPct: number;      // Tek bir videoda ulaşılan en yüksek izleme yüzdesi
+  bestLessonWatchedSeconds: number;     // O videoda izlenen saniye
+
+  // --- Tempo metrikleri (efektif/hafifletilmiş hedefe göre, RFC-001 §4.2) ---
   consecutiveInactiveDays: number;
-  last7DaysStats: {
-    totalWatchDurationMinutes: number;
-    totalQuestionsSolved: number;
-    targetCompletionRatePercentage: number;
-    activeDaysCount: number;
-  };
-  last30DaysDailyAverageMinutes: number;
+  last7dEffectiveCompletionRate: number; // WCR, 0.0 - 1.0
+  consecutiveSuccessfulDays: number;     // Efektif hedefin >= %80'i tamamlanan ardışık gün
+  streakBrokenRecently: boolean;         // Önceki 10 günde >= 6 aktif gün + ardışık 2 gün inaktif
+
+  // --- Kişisel baseline (RFC-001 §4.5) ---
+  anchoredBaseline: AnchoredBaseline;
+}
+
+interface AnchoredBaseline {
+  windowStart: string;                  // ISO tarih: streak_start - 14 gün
+  windowEnd: string;                    // ISO tarih: streak_start - 1 gün
+  activeDays: number;                   // Eşik: >= 4
+  avgMinutes: number;                   // Eşik: >= 10 dk/gün (14 güne bölünür)
+  maxGapDays: number;                   // Penceredeki en uzun inaktif seri
+  restartThresholdDays: number;         // clamp(maxGapDays + 2, 4, 7)
 }
 ```
+
+### 4.4. `PulseEvaluationResult` (Karar Motorunun Çıktısı)
+```typescript
+interface PulseEvaluationResult {
+  transitionOccurred: boolean;          // false ise diğer alanlar null (no_change)
+  previousState: PulseState | null;
+  previousSubState: PulseSubState | null;
+  newState: PulseState | null;
+  newSubState: PulseSubState | null;
+  reason: string | null;                // Örn: "INACTIVE_4D_PERSONAL_THRESHOLD_4D"
+  cooldownUntil: string | null;         // RESTART girişinde cooldown delinir ama yeni cooldown başlar
+  metricsSnapshot: Record<string, unknown>; // pulse_state_audit_logs.metrics_snapshot'a yazılır
+}
+```
+Bir geçiş gerçekleştiğinde bu sonuç tek bir transaction içinde şu kayıtlara dönüşür: `pulse_student_states` güncellemesi, `pulse_state_audit_logs` satırı ve `pulse_outbox` olayı. Değerlendirme bir Kafka olayıyla tetiklendiyse aynı transaction'a dedup kaydı da eklenir (RFC-006 §5.1).
 
 ---
 
 ## 5. API Dokümantasyonu (RESTful Interface Specification)
 
+> Base URL: `https://api.dopinghafiza.com/pulse/v1`. Tüm uç noktaların normatif tanımı, hata kodları ve `Idempotency-Key` kuralları için [RFC-003](api-specification.md) ve [OpenAPI](openapi-swagger-spec.yaml) dokümanlarına bakılır.
+
 ### 5.1. Client-Facing APIs (Öğrenci Mobil & Web Arayüzü)
 
-#### `GET /api/v1/pulse/status`
+#### `GET /pulse/me/status`
 Mobil uygulama ana sayfası açıldığında öğrencinin nabız durumunu ve gösterilmesi gereken müdahale kartını döner.
 
 * **Headers:** `Authorization: Bearer <jwt_token>`
@@ -176,7 +236,7 @@ Mobil uygulama ana sayfası açıldığında öğrencinin nabız durumunu ve gö
 
 ---
 
-#### `POST /api/v1/pulse/interventions/{id}/events`
+#### `POST /pulse/interventions/{interventionId}/events`
 Öğrencinin müdahale kartı üzerindeki etkileşimlerini loglar ve durumu günceller.
 
 * **Path Parameter:** `id` (UUID - Intervention ID)
@@ -199,7 +259,7 @@ Mobil uygulama ana sayfası açıldığında öğrencinin nabız durumunu ve gö
 
 ---
 
-#### `POST /api/v1/pulse/checkins`
+#### `POST /pulse/checkins`
 ReStart aşamasındaki öğrencinin mini anket yanıtını kaydeder ve buna göre aksiyon planı döndürür.
 
 * **Request Body:**
@@ -231,7 +291,7 @@ ReStart aşamasındaki öğrencinin mini anket yanıtını kaydeder ve buna gör
 
 ### 5.2. Internal / Backend Engine APIs (Dahili Servisler & Cron Workers)
 
-#### `POST /api/v1/internal/pulse/evaluate/{studentId}`
+#### `POST /internal/pulse/evaluate/{studentId}`
 Belirli bir öğrenci için karar motorunu manuel veya olay bazlı tetikler.
 
 * **Headers:** `X-Internal-Service-Key: <secret>`
@@ -259,7 +319,7 @@ Belirli bir öğrenci için karar motorunu manuel veya olay bazlı tetikler.
 
 ---
 
-#### `POST /api/v1/internal/pulse/batch-nightly-evaluation`
+#### `POST /internal/pulse/batch/nightly-evaluation`
 Her gece 03:00'te çalışarak hareketsizlik günlerini hesaplayan ve `BOOST`/`RESTART` geçişlerini yapan asenkron iş parçacığı.
 
 * **Request Body:**
@@ -315,7 +375,7 @@ sequenceDiagram
     PulseEngine->>PulseDB: STEADY -> RESTART geçişi yap ve Check-in ata
 
     Student->>App: Uygulamayı Açar
-    App->>PulseEngine: GET /api/v1/pulse/status
+    App->>PulseEngine: GET /pulse/me/status
     PulseEngine->>App: Durum = RESTART + Check-in Kartı
     Student->>App: Anket Yanıtı Gönderir (POST /checkins)
     App->>PulseEngine: Cevabı Kaydet ve Programı Uyarlarla

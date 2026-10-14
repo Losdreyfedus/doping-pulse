@@ -2,7 +2,7 @@
 
 **Doküman Kodu:** `RFC-PULSE-007`  
 **Modül:** `Pulse Monitoring, Alerting & Site Reliability Engineering (SRE)`  
-**Mimar:** Senior Backend Architect & Platform SRE Team  
+**Yazar:** Hamza Kar  
 **Teknoloji Yığını:** Prometheus, Grafana, OpenTelemetry, Alertmanager, Loki  
 **Tasarım Hedefi:** Sistemin sağlığını, karar motorunun doğruluğunu ve yüzbinlerce öğrencinin durum dağılımını gerçek zamanlı izlemek.
 

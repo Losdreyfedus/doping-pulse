@@ -2,7 +2,7 @@
 
 **Doküman Kodu:** `RFC-PULSE-002`  
 **Modül:** `Pulse Data Layer & Storage Engine`  
-**Mimar:** Senior Backend Architect & MT Core Team  
+**Yazar:** Hamza Kar  
 **Hedef RDBMS:** PostgreSQL 16+  
 **Tasarım Hedefi:** Yüz binlerce aktif öğrencinin eşzamanlı aksiyonlarını kaldırabilecek, düşük gecikmeli (sub-10ms), bölümlenmiş (partitioned) ve B-tree optimizasyonlu veri katmanı.
 

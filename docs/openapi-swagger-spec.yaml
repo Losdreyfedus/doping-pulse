@@ -6,8 +6,8 @@ info:
     **Doping Pulse - Akıllı Öğrenci Durum & Proaktif Müdahale Altyapısı**
     Öğrencinin platformdaki öğrenme alışkanlıklarını analiz ederek (Activate, Boost, ReStart, Steady) doğru anda doğru müdahaleyi sunan karar motoru API spesifikasyonu.
   contact:
-    name: Doping Pulse Core Engineering Team
-    email: dev-team@dopinghafiza.com
+    name: Hamza Kar
+    email: hamza.kar@dopingtech.net
 
 servers:
   - url: https://api.dopinghafiza.com

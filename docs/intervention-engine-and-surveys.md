@@ -2,7 +2,7 @@
 
 **Doküman Kodu:** `RFC-PULSE-004`  
 **Modül:** `Pulse Intervention & Content Recommendation Engine`  
-**Mimar:** Senior Backend Architect & MT Core Team  
+**Yazar:** Hamza Kar  
 **Amacı:** Öğrencinin bulunduğu duruma (`ACTIVATE`, `BOOST`, `RESTART`) göre en doğru mikro-görevi, adaptasyonu veya check-in anketini dinamik olarak üreten ve yöneten içerik orkestrasyonu.
 
 ---

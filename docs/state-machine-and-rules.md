@@ -2,7 +2,7 @@
 
 **Doküman Kodu:** `RFC-PULSE-001`  
 **Modül:** `Pulse State & Decision Engine`  
-**Mimar:** Senior Backend Architect & MT Core Team  
+**Yazar:** Hamza Kar  
 **Hedef:** Öğrenci durum sınıflandırmasının deterministik, gürültüden arındırılmış (anti-flapping) ve esnek kural motoruyla modellenmesi.
 
 ---

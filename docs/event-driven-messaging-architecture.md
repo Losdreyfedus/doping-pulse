@@ -2,7 +2,7 @@
 
 **Doküman Kodu:** `RFC-PULSE-006`  
 **Modül:** `Pulse Event Bus & Streaming Infrastructure`  
-**Mimar:** Senior Backend Architect & MT Core Team  
+**Yazar:** Hamza Kar  
 **Kullanılan Teknoloji:** Apache Kafka / AWS MSK (Alternatif: RabbitMQ)  
 **Tasarım Prensibi:** Sıfır Senkron Bağımlılık (Zero Synchronous Coupling), Kesin Sıralama (Strict Ordering per Student) ve Hata Toleransı (DLQ & Resilience).
 
