@@ -4,7 +4,7 @@
 
 Doping Hafıza MT (Management Trainee) Programı kapsamında tasarlanan **Doping Pulse**, öğrencinin platformdaki öğrenme alışkanlıklarını, ritmini ve kopuş sinyallerini gerçek zamanlı ve kümülatif olarak analiz eden; öğrenciyi büyük programlarla boğmak yerine doğru anda nokta atışı mikro-müdahaleler sunan bir **Akıllı Durum ve Karar Motoru (Backend State & Decision Engine)** mimarisidir.
 
-Mentorlerin *"Kodla değil; mimariyle, tablolarla, obje modelleriyle ve API dokümanlarıyla yaz"* talebi doğrultusunda, bir **Senior Backend Architect & Platform SRE** vizyonuyla uçtan uca prodüksiyon kalitesinde tasarlanmıştır.
+Bu teknik şartname; bir **Senior Backend Architect & Platform SRE** vizyonuyla, uçtan uca kodsuz sistem tasarımı, ilişkisel veri modelleri, RESTful API sözleşmeleri ve olay güdümlü akışlarla prodüksiyon kalitesinde tasarlanmıştır.
 
 ---
 

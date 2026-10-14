@@ -443,7 +443,7 @@ sequenceDiagram
 
 ---
 
-## 7. Mentor Sunumu İçin Önemli Teknik Notlar (Senior Perspektifi)
+## 7. Mimari Tasarım Prensipleri ve Karar Gerekçeleri (Architectural Design Principles)
 
 1. **Ölçeklenebilirlik (Scalability):** Yüzbinlerce aktif öğrencinin her aksiyonunda tüm durum geçmişini hesaplamak yerine, veriler `pulse_daily_aggregates` tablosunda kümülatif tutulur. Karar motoru sadece son 7-14 günlük özet veri penceresine (Sliding Window) bakar.
 2. **Graceful Intervention (Kullanıcıyı Boğmama Kuralı):** Bir öğrenciye günde en fazla **1 aktif müdahale** atanır. Öğrenci müdahaleyi reddederse (dismiss), aynı gün tekrar kart çıkarılmaz.
