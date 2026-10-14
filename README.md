@@ -2,9 +2,9 @@
 
 > **"Öğrencinin çalışma yolculuğunda bulunduğu durumu anlayarak, ihtiyacı olan anda doğru müdahaleyi sunmak."**
 
-Doping Hafıza MT (Management Trainee) Programı kapsamında tasarlanan **Doping Pulse**, öğrencinin platformdaki öğrenme alışkanlıklarını, ritmini ve kopuş sinyallerini gerçek zamanlı ve kümülatif olarak analiz eden; öğrenciyi büyük programlarla boğmak yerine doğru anda nokta atışı mikro-müdahaleler sunan bir **Akıllı Durum ve Karar Motoru (Backend State & Decision Engine)** mimarisidir.
+Doping Hafıza MT Programı kapsamında tasarlanan **Doping Pulse**, öğrencinin platformdaki öğrenme alışkanlıklarını, ritmini ve kopuş sinyallerini gerçek zamanlı ve kümülatif olarak analiz eden; öğrenciyi büyük programlarla boğmak yerine doğru anda nokta atışı mikro-müdahaleler sunan bir **Akıllı Karar Motoru** mimarisidir.
 
-Bu doküman seti, kod yazmadan uçtan uca bir backend tasarımı olarak hazırlanmıştır: ilişkisel veri modelleri, obje modelleri, RESTful API sözleşmeleri, durum makinesi kuralları ve olay güdümlü akışlar.
+Bu doküman seti, kod yazmadan uçtan uca bir backend tasarımı olarak hazırlanmıştır: ilişkisel veri modelleri, obje modelleri, RESTful API sözleşmeleri, state machine kuralları ve event-driven akışlar.
 
 **Yazar:** Hamza Kar
 
@@ -18,27 +18,27 @@ Bu doküman seti, kod yazmadan uçtan uca bir backend tasarımı olarak hazırla
 2. **🟡 Boost (Ritmini Güçlendir):** Çalışmaya devam ediyor ancak hedeflerinin altında kalıyor, tempo düzensizleşiyor.  
    *Müdahale:* Suçluluk hissettirmeden hedefleri dinamik küçültme (%40 hafifletme), ritmi koruma desteği.
 3. **🔴 ReStart (Koptuysan Yeniden Başlat):** Düzenli çalışırken anlamlı ve ani bir kopuş yaşıyor (4+ gün sıfır aktivite).  
-   *Müdahale:* Yargılamayan 2 soruluk check-in ("Seni ne zorladı?") $\rightarrow$ kök nedeni anla $\rightarrow$ kişiselleştirilmiş program uyarlaması.
+   *Müdahale:* Yargılamayan 2 soruluk check-in ("Seni ne zorladı?") → kök nedeni anla → kişiselleştirilmiş program uyarlaması.
 4. **⚪ Steady (Akışta Kal):** Hedef temposunda stabil ilerleyen öğrenci.  
-   *Müdahale:* Rahatsız etmeme ilkesi; kart gösterilmez, sadece seri (streak) takibi yapılır.
+   *Müdahale:* Rahatsız etmeme ilkesi; kart gösterilmez, sadece streak takibi yapılır.
 
 ---
 
-## 📂 Teknik Dokümantasyon Haritası (RFC & Architectural Specs)
+## 📂 Teknik Dokümantasyon Haritası
 
-Tüm backend altyapısı sorumlulukların ayrılığı (**Separation of Concerns**) ilkesiyle bağımsız RFC dokümanlarına ayrılmıştır:
+Tüm backend altyapısı **Separation of Concerns** ilkesiyle bağımsız RFC dokümanlarına ayrılmıştır:
 
 ```text
 doping-pulse/
 ├── README.md                                  # Proje genel bakışı ve teknik harita (Bu dosya)
 ├── .gitignore                                 # Git versiyon kontrolü hariç tutma kuralları
 └── docs/
-    ├── doping-pulse-technical-spec.md         # Çatı Sistem Tasarım Belgesi (Comprehensive RFC)
-    ├── state-machine-and-rules.md             # RFC-001: Durum Makinesi, Hysteresis & Dalgalanma Önleme
+    ├── doping-pulse-technical-spec.md         # Çatı Sistem Tasarım Belgesi
+    ├── state-machine-and-rules.md             # RFC-001: Durum Makinesi, Hysteresis & Anti-Flapping
     ├── database-schema-and-indexing.md        # RFC-002: PostgreSQL DDL, UUIDv7, Bölümleme & İndeksler
     ├── api-specification.md                   # RFC-003: RESTful API Sözleşmesi, Idempotency & RFC 7807
     ├── intervention-engine-and-surveys.md     # RFC-004: Mikro-Görev Şablonları & ReStart Anket Matrisi
-    ├── coaching-and-guardian-escalation.md    # RFC-005: Veli Bildirimi (Nudge) & Koçluk CRM Eskalasyonu
+    ├── coaching-and-guardian-escalation.md    # RFC-005: Veli Bildirimi & Koçluk CRM Eskalasyonu
     ├── event-driven-messaging-architecture.md# RFC-006: Apache Kafka Mesajlaşma, Strict Ordering & DLQ
     ├── openapi-swagger-spec.yaml              # Canlı OpenAPI 3.0 / Swagger UI & Postman Sözleşmesi
     └── monitoring-alerting-and-slas.md        # RFC-007: Gözlemlenebilirlik, Prometheus, Grafana & SLA
@@ -50,13 +50,13 @@ doping-pulse/
 
 | Modül Kodu | Doküman | Odak Noktası | Öne Çıkan Mimari Karar |
 | :--- | :--- | :--- | :--- |
-| **RFC-001** | [State Machine & Kurallar](docs/state-machine-and-rules.md) | Durum Geçişleri | **Anti-Flapping (Ping-pong önleme):** 48 saatlik cooldown tamponu, kayan pencere ve kişisel taban çizgisi (personal baseline). |
-| **RFC-002** | [Veritabanı & İndeksler](docs/database-schema-and-indexing.md) | Veri Katmanı | **PostgreSQL 16+ & UUIDv7:** Aylık deklaratif tablo bölümleme (Range Partitioning), mobil için kısmi indeksler (`WHERE status = 'ASSIGNED'`). |
+| **RFC-001** | [State Machine & Kurallar](docs/state-machine-and-rules.md) | Durum Geçişleri | **Anti-Flapping:** 48 saatlik cooldown tamponu, sliding window ve kişisel baseline. |
+| **RFC-002** | [Veritabanı & İndeksler](docs/database-schema-and-indexing.md) | Veri Katmanı | **PostgreSQL 16+ & UUIDv7:** Aylık deklaratif range partitioning, mobil için kısmi indeksler (`WHERE status = 'ASSIGNED'`). |
 | **RFC-003** | [API Spesifikasyonu](docs/api-specification.md) | Servis Sözleşmesi | **Zero-Trust & Idempotency:** JWT claim çözümleme, mükerrer istek koruması (`Idempotency-Key`), RFC 7807 `ProblemDetails` hata standardı. |
 | **RFC-004** | [Müdahale Motoru](docs/intervention-engine-and-surveys.md) | İçerik Önerisi | **Survey-to-Action Matrix:** Anket cevaplarına göre hedefleri dondurma veya hazırlık videosu atama; günde max 1 kart ve dismissal backoff kuralı. |
-| **RFC-005** | [Veli & Koç Eskalasyonu](docs/coaching-and-guardian-escalation.md) | İnsan Faktörü | **"Şikayet Etme, Çözüm Sun":** 4 kademeli alarm (Öğrenci $\rightarrow$ Koç $\rightarrow$ Veli $\rightarrow$ CRM Outbound); öğrenci derse girince otomatik çözümleme. |
-| **RFC-006** | [Olay Güdümlü Altyapı](docs/event-driven-messaging-architecture.md) | Mesajlaşma (Kafka) | **Strict In-Order per Student:** Partition Key = `studentId`, sıfır senkron bağımlılık (fire-and-forget), Transactional Outbox, transaction içi idempotent tüketici, 3x exponential backoff & DLQ. |
-| **RFC-007** | [Gözlemlenebilirlik & SLA](docs/monitoring-alerting-and-slas.md) | SRE & İzleme | **%99.95 Uptime & Sub-30ms Latency:** Prometheus durum dağılım sayaçları, Grafana dönüşüm hunileri, Sev-1 PagerDuty alarmları, %10 holdout ile etki (uplift) ölçümü. |
+| **RFC-005** | [Veli & Koç Eskalasyonu](docs/coaching-and-guardian-escalation.md) | İnsan Faktörü | **"Şikayet Etme, Çözüm Sun":** 4 kademeli alarm (Öğrenci → Koç → Veli → CRM Outbound); öğrenci derse girince otomatik çözümleme. |
+| **RFC-006** | [Event-Driven Altyapı](docs/event-driven-messaging-architecture.md) | Mesajlaşma (Kafka) | **Strict In-Order per Student:** Partition Key = `studentId`, fire-and-forget ile sıfır senkron bağımlılık, Transactional Outbox, transaction içi idempotent tüketici, 3x exponential backoff & DLQ. |
+| **RFC-007** | [Gözlemlenebilirlik & SLA](docs/monitoring-alerting-and-slas.md) | SRE & İzleme | **%99.95 Uptime & Sub-30ms Latency:** Prometheus durum dağılım sayaçları, Grafana dönüşüm hunileri, Sev-1 PagerDuty alarmları, %10 holdout ile uplift ölçümü. |
 | **OpenAPI** | [Swagger YAML](docs/openapi-swagger-spec.yaml) | Entegrasyon | **Etkileşimli Test:** Swagger Editor ve Postman uyumlu, tam şemalı, örnek payload'lu canlı API kontratı. |
 
 ---

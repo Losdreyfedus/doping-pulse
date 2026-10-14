@@ -1,27 +1,27 @@
-# 🗄️ Doping Pulse: Veritabanı Mimarisi, Şema ve İndeksleme Spesifikasyonu (Database RFC)
+# 🗄️ Doping Pulse: Veritabanı Mimarisi, Şema ve İndeksleme Spesifikasyonu
 
 **Doküman Kodu:** `RFC-PULSE-002`  
 **Modül:** `Pulse Data Layer & Storage Engine`  
 **Yazar:** Hamza Kar  
 **Hedef RDBMS:** PostgreSQL 16+  
-**Tasarım Hedefi:** Yüz binlerce aktif öğrencinin eşzamanlı aksiyonlarını kaldırabilecek, düşük gecikmeli (sub-10ms), bölümlenmiş (partitioned) ve B-tree optimizasyonlu veri katmanı.
+**Tasarım Hedefi:** Yüz binlerce aktif öğrencinin eşzamanlı aksiyonlarını kaldırabilecek, düşük gecikmeli (sub-10ms), partitioned ve B-tree optimizasyonlu veri katmanı.
 
 ---
 
 ## 1. Mimari Kararlar ve Tasarım Prensipleri
 
 ### 1.1. Neden PostgreSQL 16+?
-1. **Zengin JSONB Desteği & GIN İndeksleri:** Müdahale şablonları (`config_payload`) ve anket cevapları gibi değişken şemalı verileri NoSQL esnekliğinde tutarken ilişkisel bütünlüğü (ACID) korur.
-2. **Deklaratif Tablo Bölümleme (Declarative Table Partitioning):** Milyonlarca günlük aktivite ve telemetri kaydını performans kaybı olmadan aylık pencerelere ayırır.
-3. **Kısmi İndeksler (Partial Indexes):** Yalnızca aktif müdahaleleri (`WHERE status = 'ASSIGNED'`) indeksleyerek RAM kullanımını $\%80$ oranında düşürür.
+1. **Zengin JSONB Desteği & GIN İndeksleri:** Müdahale şablonları (`config_payload`) ve anket cevapları gibi değişken şemalı verileri NoSQL esnekliğinde tutarken ACID bütünlüğünü korur.
+2. **Deklaratif Partitioning:** Milyonlarca günlük aktivite ve telemetri kaydını performans kaybı olmadan aylık pencerelere ayırır.
+3. **Kısmi İndeksler:** Yalnızca aktif müdahaleleri (`WHERE status = 'ASSIGNED'`) indeksleyerek RAM kullanımını %80 oranında düşürür.
 
-### 1.2. UUIDv7 Seçimi (Sequential UUID)
-Standart `UUIDv4` tamamen rastgeledir ve yüksek hacimli eklemelerde (INSERT) B-Tree indekslerinde ciddi sayfa parçalanmalarına (page fragmentation) yol açar.  
-Doping Pulse'ta birincil anahtarlar için **zaman sıralı UUIDv7** (`timestamp-first sequential UUID`) kullanılır. Bu sayede hem dağıtık sistemlerde çakışmasız ID üretilir hem de kümelenmiş (clustered/sequential) B-Tree yazma performansı elde edilir.
+### 1.2. UUIDv7 Seçimi
+Standart `UUIDv4` tamamen rastgeledir ve yüksek hacimli INSERT'lerde B-Tree indekslerinde ciddi page fragmentation'a yol açar.  
+Doping Pulse'ta birincil anahtarlar için **zaman sıralı UUIDv7** kullanılır. Bu sayede hem dağıtık sistemlerde çakışmasız ID üretilir hem de sıralı B-Tree yazma performansı elde edilir.
 
 ---
 
-## 2. Varlık-İlişki Diyagramı (ERD)
+## 2. ER Diyagramı
 
 ```mermaid
 erDiagram
@@ -38,9 +38,9 @@ erDiagram
 
 ---
 
-## 3. Üretim Kalitesinde Tablo Tanımları (Production DDL)
+## 3. DDL Tanımları
 
-### 3.1. `pulse_student_states` (Durum Çekirdek Tablosu)
+### 3.1. `pulse_student_states`: Durum Çekirdek Tablosu
 Öğrencinin anlık durumunu, aktif müdahalesini ve kilit metriklerini tutan ana tablodur.
 
 ```sql
@@ -83,9 +83,9 @@ WHERE is_paused = FALSE;
 
 ---
 
-### 3.2. `pulse_daily_aggregates` (Bölümlenmiş Günlük Aktivite Özeti)
-Karar motorunun saniyeler içinde kayan pencere (sliding window) hesaplaması yapabilmesi için her gece derlenen veya olay akışıyla güncellenen tablo.  
-*Büyük Veri Notu: Bu tablo aylık pencerelerle bölümlenmiştir (Range Partitioning by Month).*
+### 3.2. `pulse_daily_aggregates`: Bölümlenmiş Günlük Aktivite Özeti
+Karar motorunun saniyeler içinde sliding window hesaplaması yapabilmesi için her gece derlenen veya olay akışıyla güncellenen tablo.  
+*Büyük Veri Notu: Bu tabloda aylık range partitioning uygulanır.*
 
 ```sql
 CREATE TABLE pulse_daily_aggregates (
@@ -120,7 +120,7 @@ ON pulse_daily_aggregates (student_id, metric_date DESC);
 
 ---
 
-### 3.3. `pulse_intervention_templates` (Müdahale Şablon Kataloğu)
+### 3.3. `pulse_intervention_templates`: Müdahale Şablon Kataloğu
 Mobil arayüzde gösterilecek mikro-görevlerin, kartların ve bildirimlerin meta-veritabanı.
 
 ```sql
@@ -150,7 +150,7 @@ CREATE INDEX idx_templates_config_gin ON pulse_intervention_templates USING GIN 
 
 ---
 
-### 3.4. `pulse_student_interventions` (Öğrenci Müdahale Yaşam Döngüsü)
+### 3.4. `pulse_student_interventions`: Öğrenci Müdahale Yaşam Döngüsü
 Öğrenciye üretilen somut kartın durumunu yönetir.
 
 ```sql
@@ -180,8 +180,8 @@ WHERE status IN ('ASSIGNED', 'VIEWED');
 
 ---
 
-### 3.5. `pulse_intervention_events` (Telemetri ve Etkileşim Logları)
-Öğrencinin müdahale kartına tıklama, kapatma (dismiss) veya tamamlama olaylarının anlık log tablosu.  
+### 3.5. `pulse_intervention_events`: Telemetri ve Etkileşim Logları
+Öğrencinin müdahale kartına tıklama, kapatma veya tamamlama olaylarının anlık log tablosu.  
 *Büyük Veri Notu: Çok hızlı büyüdüğü için haftalık/aylık partitioned tutulur.*
 
 ```sql
@@ -205,7 +205,7 @@ ON pulse_intervention_events (intervention_id, event_type);
 
 ---
 
-### 3.6. `pulse_checkin_surveys` & `pulse_checkin_responses` (ReStart Anket Katmanı)
+### 3.6. `pulse_checkin_surveys` & `pulse_checkin_responses`: ReStart Anket Katmanı
 
 ```sql
 CREATE TABLE pulse_checkin_surveys (
@@ -235,7 +235,7 @@ ON pulse_checkin_responses (selected_option_key, created_at DESC);
 
 ---
 
-### 3.7. `pulse_state_audit_logs` (Değişmez Denetim İzi - Immutable Audit Log)
+### 3.7. `pulse_state_audit_logs`: Değişmez Audit Log
 Öğrencinin neden durum değiştirdiğini yasal ve teknik izlenebilirlik için tutar.
 
 ```sql
@@ -258,7 +258,7 @@ ON pulse_state_audit_logs (student_id, created_at DESC);
 
 ---
 
-### 3.8. `pulse_outbox` (Transactional Outbox)
+### 3.8. `pulse_outbox`: Transactional Outbox
 Çıkış olaylarının iş verisiyle aynı transaction'da yazıldığı tablodur. Kafka'ya taşıma işini Outbox Relay yapar (RFC-006 §6).
 
 ```sql
@@ -279,7 +279,7 @@ ON pulse_outbox (created_at, id)
 WHERE published_at IS NULL;
 ```
 
-### 3.9. `pulse_processed_events` (İdempotent Tüketici Kaydı)
+### 3.9. `pulse_processed_events`: Idempotent Consumer Kaydı
 İşlenen her giriş olayının `eventId`'si iş verisiyle aynı transaction'da yazılır (RFC-006 §5.1). Tablo günlük bölümlenir ve 14 günlük saklama süresi sonunda bölümler `DROP` edilir.
 
 ```sql
@@ -295,9 +295,9 @@ CREATE TABLE pulse_processed_events (
 
 ---
 
-## 4. İndeksleme Mimarisi ve Sorgu Optimizasyonları (Query Performance)
+## 4. İndeksleme Mimarisi ve Sorgu Optimizasyonu
 
-### 4.1. Mobil Ana Ekran Yüklenme Sorgusu (Target Latency: < 5ms)
+### 4.1. Mobil Ana Ekran Yüklenme Sorgusu — Hedef Gecikme: < 5ms
 Mobil uygulama açıldığında çalışan en kritik sorgu:
 ```sql
 SELECT 
@@ -315,10 +315,10 @@ LEFT JOIN pulse_student_interventions i
     AND i.expires_at > NOW()
 WHERE s.student_id = :student_id;
 ```
-* **Neden Hızlı?** `s.student_id` birincil anahtardır ($O(1)$ PK lookup). `i` tablosu ise `idx_student_interventions_active_card` kısmi indeksi sayesinde yalnızca aktif kartların bulunduğu küçük bir B-Tree bloğuna bakar.
+* **Neden Hızlı?** `s.student_id` birincil anahtardır (O(1) PK lookup). `i` tablosu ise `idx_student_interventions_active_card` kısmi indeksi sayesinde yalnızca aktif kartların bulunduğu küçük bir B-Tree bloğuna bakar.
 
-### 4.2. Gece Kopuş Tarama İşi (Batch Job Optimization)
-Her gece 03:00'te 500'lük paketler (chunking) halinde çalışan tarama sorgusu:
+### 4.2. Nightly Batch Kopuş Taraması
+Her gece 03:00'te 500'lük chunk'lar halinde çalışan tarama sorgusu:
 ```sql
 SELECT 
     student_id, 
@@ -335,9 +335,9 @@ LIMIT 500 OFFSET :offset;
 
 ---
 
-## 5. Eşzamanlılık ve Yarış Koşulu Koruması (Concurrency & Race Conditions)
+## 5. Concurrency ve Race Condition Koruması
 
-Aynı anda öğrenci video bitirirken gece batch işi durumu değiştirmeye çalışırsa veri tutarsızlığı (race condition) oluşabilir.
+Aynı anda öğrenci video bitirirken gece batch işi durumu değiştirmeye çalışırsa race condition kaynaklı veri tutarsızlığı oluşabilir.
 
 1. **Optimistic Locking:** `pulse_student_states` tablosundaki `version` sütunu sayesinde güncelleme yapılırken:
    ```sql
@@ -345,6 +345,6 @@ Aynı anda öğrenci video bitirirken gece batch işi durumu değiştirmeye çal
    SET current_state = 'STEADY', version = version + 1, updated_at = NOW()
    WHERE student_id = :student_id AND version = :expected_version;
    ```
-   Eğer dönen satır sayısı 0 ise işlem başka bir thread tarafından güncellenmiştir; işlem güvenle yeniden denenir (retry).
+   Eğer dönen satır sayısı 0 ise işlem başka bir thread tarafından güncellenmiştir; işlem güvenle yeniden denenir.
 2. **Batch Worker Lock:** Gece işinde öğrenciler kilitlenmek istendiğinde `SELECT ... FOR UPDATE SKIP LOCKED` kullanılır; böylece birden fazla worker pod aynı anda birbirini bloklamadan çalışabilir.
 

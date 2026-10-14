@@ -45,7 +45,7 @@ paths:
       tags:
         - Student Client API
       summary: Müdahale Kartı Etkileşim Telemetrisi
-      description: Kart görüntülendiğinde (impression), tıklandığında (click), kapatıldığında (dismiss) veya görev tamamlandığında (complete) çağrılır.
+      description: Kart görüntülendiğinde, tıklandığında, kapatıldığında veya görev tamamlandığında çağrılır.
       operationId: recordInterventionEvent
       parameters:
         - $ref: '#/components/parameters/InterventionId'
@@ -113,7 +113,7 @@ paths:
     post:
       tags:
         - Student Client API
-      summary: Pulse Takibini Geçici Olarak Dondur (Bypass)
+      summary: Pulse Takibini Geçici Olarak Dondur
       description: Öğrencinin sınav haftası veya hastalık nedeniyle sistemi geçici olarak dondurmasını sağlar.
       operationId: pausePulseTracking
       requestBody:
@@ -594,7 +594,7 @@ components:
           schema:
             $ref: '#/components/schemas/ProblemDetails'
     ConflictError:
-      description: İşlem çakışması (Örn: Zaten tamamlanmış kart)
+      description: "İşlem çakışması (Örn: Zaten tamamlanmış kart)"
       content:
         application/problem+json:
           schema:

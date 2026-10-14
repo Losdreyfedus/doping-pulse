@@ -1,4 +1,4 @@
-# 🌐 Doping Pulse: RESTful API ve Servis Sözleşmesi Spesifikasyonu (API RFC)
+# 🌐 Doping Pulse: RESTful API ve Servis Sözleşmesi Spesifikasyonu
 
 **Doküman Kodu:** `RFC-PULSE-003`  
 **Modül:** `Pulse Gateway & Service Contracts`  
@@ -10,21 +10,21 @@
 
 ## 1. Mimari Prensipler ve Standartlar
 
-### 1.1. Kimlik Doğrulama ve Yetkilendirme (Auth & Identity)
+### 1.1. Kimlik Doğrulama ve Yetkilendirme
 Tüm client istekleri **OAuth2 / JWT Bearer Token** taşımak zorundadır.  
-İstek başlığı (Header):
+Header:
 ```http
 Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...
 ```
 * Backend, `student_id` bilgisini URL'den değil, güvenli bir şekilde JWT payload içerisindeki `sub` (subject claim) alanından çözer.
 
-### 1.2. İdempotency (Çift İstek Koruması)
-Ağ kopmaları veya kullanıcının butona çift basması durumunda mükerrer kayıt ve durum bozulmasını önlemek için tüm `POST` isteklerinde opsiyonel/zorunlu `Idempotency-Key` başlığı desteklenir.
+### 1.2. Idempotency
+Ağ kopmaları veya kullanıcının butona çift basması durumunda mükerrer kayıt ve durum bozulmasını önlemek için tüm `POST` isteklerinde opsiyonel/zorunlu `Idempotency-Key` header'ı desteklenir.
 ```http
 Idempotency-Key: 7c5a0b94-82a1-4235-9081-30c8df634f51
 ```
 
-### 1.3. Standart Hata Formatı (RFC 7807 Problem Details)
+### 1.3. Standart Hata Formatı: RFC 7807 Problem Details
 Hatalı isteklerde tutarlı `application/problem+json` gövdesi döndürülür:
 ```json
 {
@@ -38,20 +38,20 @@ Hatalı isteklerde tutarlı `application/problem+json` gövdesi döndürülür:
 }
 ```
 
-### 1.4. Hız Sınırlama (Rate Limiting)
-DDoS ve istemci döngülerini (infinite retry) önlemek için API Gateway seviyesinde Token Bucket algoritması uygulanır:
+### 1.4. Rate Limiting
+DDoS ve client kaynaklı infinite retry döngülerini önlemek için API Gateway seviyesinde Token Bucket algoritması uygulanır:
 * **Client API'leri:** Öğrenci başına `60 istek / dakika` (Burst: 100)
 * **Internal API'ler:** Servis başına `10.000 istek / dakika`
 
 ---
 
-## 2. İstemci Uç Noktaları (Client-Facing Endpoints)
+## 2. İstemci Endpoint'leri
 
 ### 2.1. `GET /pulse/me/status`
-Mobil veya web uygulaması açıldığında öğrencinin güncel nabız durumunu, serisini (streak) ve varsa gösterilmesi gereken aktif müdahale kartını çeker.
+Mobil veya web uygulaması açıldığında öğrencinin güncel nabız durumunu, streak'ini ve varsa gösterilmesi gereken aktif müdahale kartını çeker.
 
 * **Yetki:** Öğrenci (`ROLE_STUDENT`)
-* **Örnek Başarılı Yanıt (HTTP 200 OK):**
+* **Örnek Başarılı Yanıt — HTTP 200 OK:**
 ```json
 {
   "studentId": "c3a1b8d2-45e0-4789-9a21-998877665544",
@@ -78,7 +78,7 @@ Mobil veya web uygulaması açıldığında öğrencinin güncel nabız durumunu
 }
 ```
 
-* **Öğrenci STEADY (On-Track) İse Yanıt:**
+* **Öğrenci STEADY İse Yanıt:**
 ```json
 {
   "studentId": "c3a1b8d2-45e0-4789-9a21-998877665544",
@@ -97,7 +97,7 @@ Mobil veya web uygulaması açıldığında öğrencinin güncel nabız durumunu
 Öğrencinin müdahale kartı üzerindeki yaşam döngüsü eylemlerini (görüntülendi, tıklandı, kapatıldı, tamamlandı) kaydeder.
 
 * **Path Parametresi:** `interventionId` (UUIDv7)
-* **İstek Gövdesi (Request Body):**
+* **Request Body:**
 ```json
 {
   "eventType": "CLICK_CTA",
@@ -125,7 +125,7 @@ Mobil veya web uygulaması açıldığında öğrencinin güncel nabız durumunu
 ReStart durumundaki öğrenciye sunulacak mini anketin güncel soru ve şıklarını getirir.
 
 * **Path Parametresi:** `surveyId` (String, örn: `RESTART_CORE_V1`)
-* **Örnek Başarılı Yanıt (HTTP 200 OK):**
+* **Örnek Başarılı Yanıt — HTTP 200 OK:**
 ```json
 {
   "surveyId": "RESTART_CORE_V1",
@@ -167,7 +167,7 @@ ReStart durumundaki öğrenciye sunulacak mini anketin güncel soru ve şıklar�
 Öğrencinin ReStart anketine verdiği cevabı işler, kök nedeni veritabanına kaydeder ve programa anında adaptasyon uygular.
 
 * **Headers:** `Idempotency-Key: <unique-uuid>`
-* **İstek Gövdesi (Request Body):**
+* **Request Body:**
 ```json
 {
   "interventionId": "018f3a2b-7c4d-7a89-9e12-3456789abcde",
@@ -177,7 +177,7 @@ ReStart durumundaki öğrenciye sunulacak mini anketin güncel soru ve şıklar�
 }
 ```
 * **Not:** Uygulanacak eylem, `selectedOptionKey`'den sunucu tarafında türetilir (RFC-004 §4 Survey-to-Action Matrix). İstemci ayrıca eylem göndermez; böylece iş kuralı tek bir yerde kalır ve mobil sürüm güncellemesi gerektirmeden değiştirilebilir.
-* **Örnek Başarılı Yanıt (HTTP 200 OK):**
+* **Örnek Başarılı Yanıt — HTTP 200 OK:**
 ```json
 {
   "success": true,
@@ -198,14 +198,14 @@ ReStart durumundaki öğrenciye sunulacak mini anketin güncel soru ve şıklar�
 ### 2.5. `POST /pulse/me/pause`
 Öğrencinin kasıtlı olarak sisteme "Ben 3 gün yokum (hastalık/tatil/sınav)" diyerek Pulse motorunu geçici olarak dondurmasını sağlar (Bypass bayrağı).
 
-* **İstek Gövdesi (Request Body):**
+* **Request Body:**
 ```json
 {
   "durationDays": 4,
   "reason": "MEDICAL_OR_HOLIDAY"
 }
 ```
-* **Başarılı Yanıt (HTTP 200 OK):**
+* **Başarılı Yanıt — HTTP 200 OK:**
 ```json
 {
   "isPaused": true,
@@ -216,15 +216,15 @@ ReStart durumundaki öğrenciye sunulacak mini anketin güncel soru ve şıklar�
 
 ---
 
-## 3. İç Servisler ve Asenkron İşçi Uç Noktaları (Internal / Engine APIs)
+## 3. Dahili Endpoint'ler
 
-Bu uç noktalar sadece Doping'in iç ağı (VPC / Kubernetes Service Mesh) içerisinden `X-Internal-Service-Key` başlığı veya mTLS ile çağrılabilir.
+Bu endpoint'ler sadece Doping'in iç ağı (VPC / Kubernetes Service Mesh) içerisinden `X-Internal-Service-Key` header'ı veya mTLS ile çağrılabilir.
 
 ### 3.1. `POST /internal/pulse/evaluate/{studentId}`
 Core video veya test servislerinden bir olay (`activity.completed`) gerçekleştiğinde karar motorunu asenkron tetikler.
 
 * **Headers:** `X-Internal-Service-Key: <internal-secret>`
-* **İstek Gövdesi (Request Body):**
+* **Request Body:**
 ```json
 {
   "eventSource": "LESSON_SERVICE",
@@ -236,7 +236,7 @@ Core video veya test servislerinden bir olay (`activity.completed`) gerçekleşt
   }
 }
 ```
-* **Örnek Başarılı Yanıt (HTTP 200 OK):**
+* **Örnek Başarılı Yanıt — HTTP 200 OK:**
 ```json
 {
   "studentId": "c3a1b8d2-45e0-4789-9a21-998877665544",
@@ -254,7 +254,7 @@ Core video veya test servislerinden bir olay (`activity.completed`) gerçekleşt
 ### 3.2. `POST /internal/pulse/batch/nightly-evaluation`
 Her gece 03:00'te Kubernetes CronJob tarafından tetiklenen, öğrencilerin inaktivite günlerini hesaplayıp toplu olarak `BOOST` veya `RESTART` durumuna geçiren iş endpoint'i.
 
-* **İstek Gövdesi (Request Body):**
+* **Request Body:**
 ```json
 {
   "executionDate": "2026-10-13",
@@ -262,7 +262,7 @@ Her gece 03:00'te Kubernetes CronJob tarafından tetiklenen, öğrencilerin inak
   "dryRun": false
 }
 ```
-* **Başarılı Yanıt (HTTP 202 Accepted):**
+* **Başarılı Yanıt — HTTP 202 Accepted:**
 ```json
 {
   "jobId": "batch_pulse_nightly_20261013_0300",
@@ -274,10 +274,10 @@ Her gece 03:00'te Kubernetes CronJob tarafından tetiklenen, öğrencilerin inak
 ---
 
 ### 3.3. `GET /internal/pulse/students/{studentId}/timeline`
-Koç paneli (Coaching CRM) veya veli destek uzmanları için öğrencinin son 30 gündeki durum değişikliklerini ve müdahale geçmişini döner.
+Koç paneli veya veli destek uzmanları için öğrencinin son 30 gündeki durum değişikliklerini ve müdahale geçmişini döner.
 
 * **Query Parametreleri:** `limit=20`
-* **Örnek Başarılı Yanıt (HTTP 200 OK):**
+* **Örnek Başarılı Yanıt — HTTP 200 OK:**
 ```json
 {
   "studentId": "c3a1b8d2-45e0-4789-9a21-998877665544",

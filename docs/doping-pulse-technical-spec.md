@@ -1,4 +1,4 @@
-# Doping Pulse: Backend Teknik Tasarım Dokümanı (Technical Specification / RFC)
+# Doping Pulse: Backend Teknik Tasarım Dokümanı
 
 **Versiyon:** 1.0.0  
 **Yazar:** Hamza Kar  
@@ -11,21 +11,21 @@
 
 ## 1. Yönetici Özeti ve Mimari Vizyon
 
-**Doping Pulse**, öğrencinin platform içerisindeki çalışma davranışlarını, ritmini ve kopuş sinyallerini gerçek zamanlı ve kümülatif olarak analiz eden; öğrencinin ihtiyacına göre doğru anda nokta atışı müdahale (intervention) sağlayan bir **Akıllı Durum ve Karar Motorudur (State & Decision Engine)**.
+**Doping Pulse**, öğrencinin platform içerisindeki çalışma davranışlarını, ritmini ve kopuş sinyallerini gerçek zamanlı ve kümülatif olarak analiz eden; öğrencinin ihtiyacına göre doğru anda nokta atışı müdahale sağlayan bir **Akıllı Karar Motorudur**.
 
-### Temel Durumlar (Pulse States)
+### Temel Durumlar
 1. **🟢 ACTIVATE (Harekete Geçir):** Henüz anlamlı bir çalışma davranışı göstermemiş veya sisteme yeni adapte olan öğrenci. Eşik: Çok düşük, mikrogörev odaklı ("Bugün sadece 1 video izle").
 2. **🟡 BOOST (Ritmini Güçlendir):** Çalışmaya devam eden ancak temposu düzensiz veya hedeflerinin altında kalan öğrenci. Eşik: Program hafifletme, motivasyon ve ritim adaptasyonu.
 3. **🔴 RESTART (Yeniden Başlat):** Aktif çalışırken ani/kademeli kopuş yaşayan öğrenci. Eşik: Yargılamayan check-in ("Neden koptun?"), kök neden tespiti ve kişiselleştirilmiş geri dönüş planı.
-4. **⚪ STEADY (Dengede / On-Track):** Hedeflediği tempoda stabil ilerleyen öğrenci. Pasif izleme durumundadır, arayüzü gereksiz bildirimle boğmaz.
+4. **⚪ STEADY (Dengede):** Hedeflediği tempoda stabil ilerleyen öğrenci. Pasif izleme durumundadır, arayüzü gereksiz bildirimle boğmaz.
 
 ---
 
-## 2. Durum Makinesi ve Karar Motoru (State Machine & Rules)
+## 2. State Machine ve Karar Motoru
 
 Karar motoru iki kaynaktan beslenir:
-1. **Asenkron Olaylar (Event-Driven):** Video izleme, soru çözme, deneme sınavı bitirme anında tetiklenen olaylar.
-2. **Periyodik Tarama (Scheduled Batch Worker):** Her gece çalışan ve hareketsizlik/kopuş sürelerini denetleyen tarama servisi.
+1. **Event-Driven Asenkron Olaylar:** Video izleme, soru çözme, deneme sınavı bitirme anında tetiklenen olaylar.
+2. **Nightly Batch:** Her gece çalışan ve hareketsizlik/kopuş sürelerini denetleyen gece batch işi.
 
 ```mermaid
 stateDiagram-v2
@@ -48,28 +48,28 @@ stateDiagram-v2
 | # | Geçiş | Koşul (normatif tanım: [RFC-001 §3](state-machine-and-rules.md)) |
 | :---: | :--- | :--- |
 | 1 | `[*] → ACTIVATE` | Paket satın alındı (`account.student.enrolled`) |
-| 2 | `ACTIVATE → STEADY` | Bir videonun $\ge \%80$'i ve $\ge 180\text{ sn}$'si izlendi **VEYA** kümülatif $\ge 5$ soru çözüldü |
+| 2 | `ACTIVATE → STEADY` | Bir videonun ≥ %80'i ve ≥ 180 sn'si izlendi **VEYA** kümülatif ≥ 5 soru çözüldü |
 | 3 | `ACTIVATE → ACTIVATE` | Aktivite yok; düşük eşikli mikro-görev devam eder (7. günde `ACTIVATE_CRITICAL`) |
-| 4 | `STEADY → BOOST` | Son 7 günde efektif hedef tamamlama $<\%50$ **VEYA** seri bozulması |
+| 4 | `STEADY → BOOST` | Son 7 günde efektif hedef tamamlama < %50 **VEYA** seri bozulması |
 | 5 | `STEADY → RESTART` | Kişisel eşik aşıldı: ardışık 4–7 gün sıfır aktivite (RFC-001 §4.5) |
-| 6 | `BOOST → STEADY` | Ardışık 3 başarılı gün (efektif hedefin $\ge \%80$'i) |
-| 7 | `BOOST → RESTART` | Ardışık $\ge 5$ gün sıfır aktivite |
+| 6 | `BOOST → STEADY` | Ardışık 3 başarılı gün (efektif hedefin ≥ %80'i) |
+| 7 | `BOOST → RESTART` | Ardışık ≥ 5 gün sıfır aktivite |
 | 8 | `RESTART → ACTIVATE` | Check-in yanıtı `OTHER` |
 | 9 | `RESTART → BOOST` | Check-in yanıtı `BURNOUT` (hedefler %60 hafifletilir) **VEYA** adaptasyon süresi toparlanma olmadan doldu |
 | 10 | `RESTART → STEADY` | Ardışık 4 başarılı gün |
 
-### Karar Kuralları ve Eşik Değerleri (Rule Matrix)
+### Karar Kuralları ve Eşik Değerleri
 
-| Hedef Durum | Tetikleyici Sinyal (Signal) | Eşik Değer (Threshold) | Örnek Müdahale (Intervention) |
+| Hedef Durum | Tetikleyici Sinyal | Eşik Değer | Örnek Müdahale |
 | :--- | :--- | :--- | :--- |
-| **ACTIVATE** | Kayıt var, henüz "Aha! Moment" yok | Video $\ge \%80$ ve $\ge 180\text{ sn}$ izlenmedi AND kümülatif $< 5$ soru | "Bugün sadece 5 dakikalık konuya giriş videosunu izle." (Micro-Task) |
-| **BOOST** | Düşük / Düzensiz tempo | Son 7 günde efektif hedef tamamlama $<\%50$ OR Seri Bozulması (önceki 10 günde $\ge 6$ aktif gün + ardışık 2 gün inaktif) | "Bugünkü hedefini 20 sorudan 12 soruya düşürdük, ritmini koru." ($\%40$ hafifletme) |
-| **RESTART** | Kişisel normale göre ani kopuş | Kopuş öncesi 14 günde $\ge 4$ aktif gün ve ort. $\ge 10\text{ dk/gün}$ AND ardışık inaktif gün $\ge$ kişisel eşik (4–7 gün, RFC-001 §4.5) | 2 soruluk Mini Check-in: "Seni ne zorladı? (Okul sınavları / Konuyu anlamadım / Yoruldum / Teknik sorun / Diğer)" |
-| **STEADY** | Düzenli çalışma | Hedef tamamlama oranı $\ge \%70$ | Müdahale yok; tebrik/seri (streak) sayacı gösterimi. |
+| **ACTIVATE** | Kayıt var, henüz "Aha! Moment" yok | Video ≥ %80 ve ≥ 180 sn izlenmedi AND kümülatif < 5 soru | "Bugün sadece 5 dakikalık konuya giriş videosunu izle." (mikro-görev) |
+| **BOOST** | Düşük / Düzensiz tempo | Son 7 günde efektif hedef tamamlama < %50 OR Seri Bozulması (önceki 10 günde ≥ 6 aktif gün + ardışık 2 gün inaktif) | "Bugünkü hedefini 20 sorudan 12 soruya düşürdük, ritmini koru." (%40 hafifletme) |
+| **RESTART** | Kişisel normale göre ani kopuş | Kopuş öncesi 14 günde ≥ 4 aktif gün ve ort. ≥ 10 dk/gün AND ardışık inaktif gün ≥ kişisel eşik (4–7 gün, RFC-001 §4.5) | 2 soruluk Mini Check-in: "Seni ne zorladı? (Okul sınavları / Konuyu anlamadım / Yoruldum / Teknik sorun / Diğer)" |
+| **STEADY** | Düzenli çalışma | Hedef tamamlama oranı ≥ %70 | Müdahale yok; tebrik/streak sayacı gösterimi. |
 
 ---
 
-## 3. Veritabanı Şeması (Database Schema)
+## 3. Veritabanı Şeması
 
 Pulse veri katmanı PostgreSQL 16+ üzerinde tasarlanmıştır. Üretim DDL'i, indeks stratejisi, bölümleme ve eşzamanlılık kuralları için **normatif kaynak [RFC-002: Veritabanı Şeması ve İndeksleme](database-schema-and-indexing.md)** dokümanıdır. Bu bölüm yalnızca genel bir bakış sunar.
 
@@ -88,7 +88,7 @@ erDiagram
 | Tablo | Sorumluluk | Kilit Tasarım Kararları | Detay |
 | :--- | :--- | :--- | :--- |
 | `pulse_student_states` | Öğrencinin anlık durumu, alt durumu, aktif kartı ve dondurma/adaptasyon bilgisi | PK = `student_id`, Optimistic Locking (`version`), `experiment_arm` (holdout), `is_paused = FALSE` kısmi indeksi | RFC-002 §3.1 |
-| `pulse_daily_aggregates` | Kayan pencere ve kişisel baseline hesabı için günlük çalışma özeti | Aylık Range Partitioning, PK `(metric_date, student_id)`, `(student_id, metric_date DESC)` indeksi | RFC-002 §3.2 |
+| `pulse_daily_aggregates` | Sliding window ve kişisel baseline hesabı için günlük çalışma özeti | Aylık Range Partitioning, PK `(metric_date, student_id)`, `(student_id, metric_date DESC)` indeksi | RFC-002 §3.2 |
 | `pulse_intervention_templates` | Mikro-görev, kart ve bildirim şablon kataloğu | JSONB `config_payload` + GIN indeksi; yeni müdahale tipi migration gerektirmez | RFC-002 §3.3 |
 | `pulse_student_interventions` | Öğrenciye atanan kartın yaşam döngüsü | UUIDv7 PK, `status IN ('ASSIGNED','VIEWED')` kısmi indeksi (mobil ana ekran < 5 ms) | RFC-002 §3.4 |
 | `pulse_intervention_events` | Kart telemetrisi (impression, click, dismiss, complete) | Aylık Range Partitioning, yüksek yazma hacmi | RFC-002 §3.5 |
@@ -101,7 +101,7 @@ erDiagram
 
 ---
 
-## 4. Obje Modelleri (Domain Objects & Data Transfer Objects)
+## 4. Obje Modelleri
 
 > **Kaynak Kuralı:** İstemciye dönen DTO'ların normatif tanımı [OpenAPI sözleşmesidir](openapi-swagger-spec.yaml) (`components/schemas`). Dahili motor objeleri (§4.3, §4.4) RFC-001 §6'daki pseudo-code ile birebir eşleşir. TypeScript'te `camelCase`, pseudo-code ve DB'de `snake_case` kullanılır.
 
@@ -155,7 +155,7 @@ interface CheckInSurveySubmissionDTO {
 ```
 
 ### 4.3. `PulseEvaluationContext` (Karar Motoruna Giren Dahili Veri Objesi)
-Motor her değerlendirmede bu objeyi `pulse_student_states` ve `pulse_daily_aggregates` (son 21 gün) üzerinden tek seferde oluşturur. Değerlendirme fonksiyonu yalnızca bu objeyi okur; DB'ye tekrar gitmez, bu da onu saf (pure) ve test edilebilir kılar.
+Motor her değerlendirmede bu objeyi `pulse_student_states` ve `pulse_daily_aggregates` (son 21 gün) üzerinden tek seferde oluşturur. Değerlendirme fonksiyonu yalnızca bu objeyi okur; DB'ye tekrar gitmez, bu da onu pure ve test edilebilir kılar.
 
 ```typescript
 interface PulseEvaluationContext {
@@ -215,11 +215,11 @@ Bir geçiş gerçekleştiğinde bu sonuç tek bir transaction içinde şu kayıt
 
 ---
 
-## 5. API Dokümantasyonu (RESTful Interface Specification)
+## 5. API Dokümantasyonu
 
-> Base URL: `https://api.dopinghafiza.com/pulse/v1`. Tüm uç noktaların normatif tanımı, hata kodları ve `Idempotency-Key` kuralları için [RFC-003](api-specification.md) ve [OpenAPI](openapi-swagger-spec.yaml) dokümanlarına bakılır.
+> Base URL: `https://api.dopinghafiza.com/pulse/v1`. Tüm endpoint'lerin normatif tanımı, hata kodları ve `Idempotency-Key` kuralları için [RFC-003](api-specification.md) ve [OpenAPI](openapi-swagger-spec.yaml) dokümanlarına bakılır.
 
-### 5.1. Client-Facing APIs (Öğrenci Mobil & Web Arayüzü)
+### 5.1. İstemci API'leri (Öğrenci Mobil & Web Arayüzü)
 
 #### `GET /pulse/me/status`
 Mobil uygulama ana sayfası açıldığında öğrencinin nabız durumunu ve gösterilmesi gereken müdahale kartını döner.
@@ -252,7 +252,7 @@ Mobil uygulama ana sayfası açıldığında öğrencinin nabız durumunu ve gö
 #### `POST /pulse/interventions/{interventionId}/events`
 Öğrencinin müdahale kartı üzerindeki etkileşimlerini loglar ve durumu günceller.
 
-* **Path Parameter:** `id` (UUID - Intervention ID)
+* **Path Parameter:** `interventionId` (UUIDv7)
 * **Request Body:**
 ```json
 {
@@ -302,7 +302,7 @@ ReStart aşamasındaki öğrencinin mini anket yanıtını kaydeder ve buna gör
 
 ---
 
-### 5.2. Internal / Backend Engine APIs (Dahili Servisler & Cron Workers)
+### 5.2. Dahili API'ler
 
 #### `POST /internal/pulse/evaluate/{studentId}`
 Belirli bir öğrenci için karar motorunu manuel veya olay bazlı tetikler.
@@ -353,9 +353,9 @@ Her gece 03:00'te çalışarak hareketsizlik günlerini hesaplayan ve `BOOST`/`R
 
 ---
 
-## 6. Sistem Entegrasyonu ve Olay Akışı (Event-Driven Architecture)
+## 6. Sistem Entegrasyonu ve Olay Akışı
 
-Doping Hafıza'nın ana monolit/mikroservis mimarisini yormamak için **Olay Güdümlü (Event-Driven)** yaklaşım benimsenmiştir:
+Doping Hafıza'nın ana monolit/mikroservis mimarisini yormamak için **event-driven** yaklaşım benimsenmiştir:
 
 ```mermaid
 sequenceDiagram
@@ -363,7 +363,7 @@ sequenceDiagram
     actor Student as Öğrenci
     participant App as Mobil / Web Client
     participant CoreApp as Doping Core Service (Video/Test)
-    participant Kafka as Event Bus (Kafka / RabbitMQ)
+    participant Kafka as Event Bus
     participant PulseEngine as Pulse Decision Engine
     participant PulseDB as Pulse PostgreSQL
 
@@ -371,7 +371,7 @@ sequenceDiagram
     CoreApp->>Kafka: Publish: "learning.lesson.watched" / "learning.quiz.completed"
     
     Kafka->>PulseEngine: Consume Activity Event
-    PulseEngine->>PulseEngine: Kuralları Değerlendir (Context Rule Engine)
+    PulseEngine->>PulseEngine: Kuralları Değerlendir
     
     Note over PulseEngine,PulseDB: Tek Transaction (RFC-006 §5.1, §6)
     PulseEngine->>PulseDB: INSERT pulse_processed_events (dedup)
@@ -396,10 +396,10 @@ sequenceDiagram
 
 ---
 
-## 7. Mimari Tasarım Prensipleri ve Karar Gerekçeleri (Architectural Design Principles)
+## 7. Mimari Tasarım Prensipleri ve Karar Gerekçeleri
 
-1. **Ölçeklenebilirlik (Scalability):** Yüzbinlerce aktif öğrencinin her aksiyonunda tüm durum geçmişini hesaplamak yerine, veriler `pulse_daily_aggregates` tablosunda kümülatif tutulur. Karar motoru sadece son 7-14 günlük özet veri penceresine (Sliding Window) bakar.
-2. **Graceful Intervention (Kullanıcıyı Boğmama Kuralı):** Bir öğrenciye günde en fazla **1 aktif müdahale** atanır. Öğrenci müdahaleyi reddederse (dismiss), aynı gün tekrar kart çıkarılmaz.
-3. **Auditability (İzlenebilirlik):** `pulse_state_audit_logs` tablosu sayesinde "Bu öğrenci neden ReStart'a düştü, hangi kural tetiklendi?" sorusuna geriye dönük kesin cevap verilebilir.
-4. **Genişletilebilirlik (Extensibility):** `pulse_intervention_templates` tablosundaki `config_payload` alanı JSONB tutulduğu için, yeni bir müdahale tipi (örneğin "Yapay Zeka Çalışma Asistanı Sohbeti") eklenirken veritabanında migration yapmaya gerek kalmaz.
+1. **Ölçeklenebilirlik:** Yüzbinlerce aktif öğrencinin her aksiyonunda tüm durum geçmişini hesaplamak yerine, veriler `pulse_daily_aggregates` tablosunda kümülatif tutulur. Karar motoru sadece son 7-14 günlük sliding window'a bakar.
+2. **Kullanıcıyı Boğmama Kuralı:** Bir öğrenciye günde en fazla **1 aktif müdahale** atanır. Öğrenci müdahaleyi dismiss ederse aynı gün tekrar kart çıkarılmaz.
+3. **İzlenebilirlik:** `pulse_state_audit_logs` tablosu sayesinde "Bu öğrenci neden ReStart'a düştü, hangi kural tetiklendi?" sorusuna geriye dönük kesin cevap verilebilir.
+4. **Genişletilebilirlik:** `pulse_intervention_templates` tablosundaki `config_payload` alanı JSONB tutulduğu için, yeni bir müdahale tipi (örneğin "Yapay Zeka Çalışma Asistanı Sohbeti") eklenirken veritabanında migration yapmaya gerek kalmaz.
 
