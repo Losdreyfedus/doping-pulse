@@ -56,7 +56,7 @@ Aşağıdaki tablo, durumlar arası geçiş koşullarını, tetikleyici mekanizm
 | **[*]** | **ACTIVATE** | Event: `StudentEnrolledEvent` | Paket aktif, baseline aktivite yok | Yok (Başlangıç) |
 | **ACTIVATE** | **STEADY** | Event: `MilestoneCompletedEvent` | **"Aha! moment"** (bkz. §4.1): Bir videonun ≥ %80'i **ve** en az 180 sn'si izlendi **VEYA** kümülatif ≥ 5 soru çözüldü | Anında |
 | **ACTIVATE** | **ACTIVATE_CRITICAL** | Nightly batch | Kayıt üzerinden ≥ 7 gün geçti AND toplam aktivite süresi = 0 | 24 saat |
-| **STEADY** | **BOOST** | Nightly batch | Son 7 günlük hedef tamamlama (WCR) < %50 **VEYA** seri bozulması (önceki 10 günde ≥ 6 aktif gün varken ardışık 2 gün inaktif) | 48 saat Cooldown |
+| **STEADY** | **BOOST** | Nightly batch | **(** Son 7 günlük hedef tamamlama (WCR) < %50 **VE** tempo oranı < %70 **)** **VEYA** seri bozulması (önceki 10 günde ≥ 6 aktif gün varken ardışık 2 gün inaktif) | 48 saat Cooldown |
 | **STEADY** | **RESTART** | Nightly batch | **Kişisel baseline** (bkz. §4.5): Kopuş öncesi 14 günde ≥ 4 aktif gün **AND** ortalama ≥ 10 dk/gün **AND** ardışık inaktif gün ≥ `restart_threshold_days` | Anında (Cooldown'u deler) |
 | **BOOST** | **STEADY** | Batch / Event | Ardışık 3 "başarılı gün" (o günün *efektif/hafifletilmiş* hedefinin ≥ %80'i tamamlandı) | 72 saat stabilite |
 | **BOOST** | **RESTART** | Nightly batch | Ardışık inaktif gün ≥ max(5, `restart_threshold_days`) | Anında (Cooldown'u deler) |
@@ -91,7 +91,15 @@ Aşağıdaki tablo, durumlar arası geçiş koşullarını, tetikleyici mekanizm
     ```text
     WCR = son 7 günde tamamlanan görev sayısı ÷ son 7 günde hedeflenen görev sayısı
     ```
-    WCR < 0.50 ise → `BOOST_LOW_PACE`.
+    WCR tek başına yeterli değildir; tempo oranı ile birlikte değerlendirilir (aşağıda).
+  * **Tempo Oranı:** Öğrencinin son 7 gündeki toplam çalışma süresini, kendi normal temposuyla karşılaştırır:
+    ```text
+    tempo oranı = son 7 günün toplam çalışma dakikası ÷ (önceki 14 günün günlük ortalaması × 7)
+    ```
+    Çalışma süresi içerikten bağımsızdır; plandaki görevler dışında izlenen videolar ve çözülen sorular da sayılır.
+  * **BOOST_LOW_PACE kuralı:** WCR < 0.50 **VE** tempo oranı < 0.70 ise → `BOOST_LOW_PACE`.
+    * **Neden iki koşul?** WCR yalnızca öğrencinin *plandaki* görevlerini ölçer. Yazılı haftasında okul konularına Doping'den çalışan bir öğrencinin WCR'ı düşer ama çalışma süresi düşmez. Tek başına WCR, hayatının en yoğun çalıştığı haftada öğrenciye "temposu düştü" muamelesi yapardı. Tempo oranı "plana uymuyor" ile "çalışmıyor" durumlarını ayırır.
+    * **Yeni öğrenci istisnası:** Önceki 14 günde hiç çalışma verisi yoksa (örn. STEADY'ye yeni geçmiş öğrenci) tempo oranı hesaplanamaz; bu durumda yalnızca WCR'a bakılır.
   * **Seri Bozulması:** Öğrencinin geçmiş 10 günde en az 6 gün çalışması varken, ardışık 2 gün hiç girmemesi.
 * **Müdahale Stratejisi:**
   * Asla *"Çok geridesin, daha çok çalışmalısın!"* denmez.
@@ -219,6 +227,7 @@ AHA_MIN_WATCH_SECONDS      = 180
 AHA_MIN_QUESTIONS          = 5
 COOLDOWN_HOURS             = 48
 BOOST_ENTRY_WCR            = 0.50
+BOOST_ENTRY_TEMPO_RATIO    = 0.70
 BOOST_EXIT_SUCCESS_DAYS    = 3
 RESTART_EXIT_SUCCESS_DAYS  = 4
 BASELINE_MIN_ACTIVE_DAYS   = 4
@@ -235,6 +244,7 @@ def evaluate_student_pulse(student_id: UUID, ctx: PulseEvaluationContext) -> Pul
     is_in_cooldown = (now - ctx.state_updated_at) < timedelta(hours=COOLDOWN_HOURS)
     inactive_days  = ctx.consecutive_inactive_days
     wcr_7d         = ctx.last_7d_effective_completion_rate   # Efektif (hafifletilmiş) hedefe göre
+    tempo_ratio    = ctx.tempo_ratio                         # Son 7 gün ÷ (önceki 14 gün ort. × 7); veri yoksa None
     success_days   = ctx.consecutive_successful_days         # Efektif hedefin >= %80'i tamamlanan ardışık gün
 
     # -------------------------------------------------------------
@@ -276,8 +286,10 @@ def evaluate_student_pulse(student_id: UUID, ctx: PulseEvaluationContext) -> Pul
     # KURAL 3: BOOST Girişi (Öncelik: 2)
     # -------------------------------------------------------------
     if state == PulseState.STEADY:
-        if wcr_7d < BOOST_ENTRY_WCR:
-            return transition(PulseState.BOOST, "BOOST_LOW_PACE", f"WEEKLY_COMPLETION_RATE_{wcr_7d:.2f}")
+        # Plan dışı ama yoğun çalışan öğrenci (örn. yazılı haftası) BOOST'a düşmez
+        tempo_dropped = tempo_ratio is None or tempo_ratio < BOOST_ENTRY_TEMPO_RATIO
+        if wcr_7d < BOOST_ENTRY_WCR and tempo_dropped:
+            return transition(PulseState.BOOST, "BOOST_LOW_PACE", f"WCR_{wcr_7d:.2f}_TEMPO_{tempo_ratio or 0:.2f}")
         if ctx.streak_broken_recently:   # önceki 10 günde >= 6 aktif gün + ardışık 2 gün inaktif
             return transition(PulseState.BOOST, "BOOST_STREAK_BROKEN", "STREAK_BROKEN_2_DAYS")
 

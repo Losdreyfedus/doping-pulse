@@ -59,7 +59,7 @@ stateDiagram-v2
 | 1 | `[*] → ACTIVATE` | Paket satın alındı (`account.student.enrolled`) |
 | 2 | `ACTIVATE → STEADY` | Bir videonun ≥ %80'i ve ≥ 180 sn'si izlendi **VEYA** kümülatif ≥ 5 soru çözüldü |
 | 3 | `ACTIVATE → ACTIVATE` | Aktivite yok; düşük eşikli mikro-görev devam eder (7. günde `ACTIVATE_CRITICAL`) |
-| 4 | `STEADY → BOOST` | Son 7 günde efektif hedef tamamlama < %50 **VEYA** seri bozulması |
+| 4 | `STEADY → BOOST` | Son 7 günde efektif hedef tamamlama < %50 **ve** çalışma süresi normalin %70'inin altında **VEYA** seri bozulması |
 | 5 | `STEADY → RESTART` | Kişisel eşik aşıldı: ardışık 4–7 gün sıfır aktivite (RFC-001 §4.5) |
 | 6 | `BOOST → STEADY` | Ardışık 3 başarılı gün (efektif hedefin ≥ %80'i) |
 | 7 | `BOOST → RESTART` | Ardışık ≥ 5 gün sıfır aktivite |
@@ -72,7 +72,7 @@ stateDiagram-v2
 | Hedef Durum | Tetikleyici Sinyal | Eşik Değer | Örnek Müdahale |
 | :--- | :--- | :--- | :--- |
 | **ACTIVATE** | Kayıt var, henüz "Aha! Moment" yok | Video ≥ %80 ve ≥ 180 sn izlenmedi AND kümülatif < 5 soru | "Bugün sadece 5 dakikalık konuya giriş videosunu izle." (mikro-görev) |
-| **BOOST** | Düşük / Düzensiz tempo | Son 7 günde efektif hedef tamamlama < %50 OR Seri Bozulması (önceki 10 günde ≥ 6 aktif gün + ardışık 2 gün inaktif) | "Bugünkü hedefini 20 sorudan 12 soruya düşürdük, ritmini koru." (%40 hafifletme) |
+| **BOOST** | Düşük / Düzensiz tempo | (Son 7 günde efektif hedef tamamlama < %50 AND tempo oranı < %70) OR Seri Bozulması (önceki 10 günde ≥ 6 aktif gün + ardışık 2 gün inaktif) | "Bugünkü hedefini 20 sorudan 12 soruya düşürdük, ritmini koru." (%40 hafifletme) |
 | **RESTART** | Kişisel normale göre ani kopuş | Kopuş öncesi 14 günde ≥ 4 aktif gün ve ort. ≥ 10 dk/gün AND ardışık inaktif gün ≥ kişisel eşik (4–7 gün, RFC-001 §4.5) | 2 soruluk Mini Check-in: "Seni ne zorladı? (Okul sınavları / Konuyu anlamadım / Yoruldum / Teknik sorun / Diğer)" |
 | **STEADY** | Düzenli çalışma | Hedef tamamlama oranı ≥ %70 | Müdahale yok; tebrik/streak sayacı gösterimi. |
 
@@ -190,6 +190,7 @@ interface PulseEvaluationContext {
   // --- Tempo metrikleri (efektif/hafifletilmiş hedefe göre, RFC-001 §4.2) ---
   consecutiveInactiveDays: number;
   last7dEffectiveCompletionRate: number; // WCR, 0.0 - 1.0
+  tempoRatio: number | null;             // Son 7 gün çalışma dk ÷ (önceki 14 gün ort. × 7); veri yoksa null
   consecutiveSuccessfulDays: number;     // Efektif hedefin >= %80'i tamamlanan ardışık gün
   streakBrokenRecently: boolean;         // Önceki 10 günde >= 6 aktif gün + ardışık 2 gün inaktif
 

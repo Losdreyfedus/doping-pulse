@@ -14,7 +14,7 @@
 | :--- | :--- |
 | **Öğrenci** | Ece, YKS öğrencisi, `studentId = c3a1b8d2-45e0-4789-9a21-998877665544` |
 | **Normali** | 28 Eylül – 11 Ekim arası her gün ~90 dakika çalışıyor. Durumu `STEADY`. |
-| **Olay** | 12 Ekim'de okulda yazılı haftası başlıyor; 4 gün boyunca platforma hiç girmiyor. |
+| **Olay** | 12 Ekim'de okulda yazılı haftası başlıyor. Ece yazılılarına okul notlarından çalışıyor; 4 gün boyunca Doping'e hiç girmiyor. |
 | **Deney grubu** | `TREATMENT` (müdahale alıyor) |
 
 ---
@@ -40,7 +40,7 @@ gantt
 | # | Zaman | Ece ne yaptı? | Motor ne gördü? | Durum → Alt durum | Yazılan kayıt / olay |
 | :---: | :--- | :--- | :--- | :--- | :--- |
 | 1 | 28 Eyl – 11 Eki | Her gün ~90 dk çalıştı | Günlük özetler birikti | `STEADY` / `STEADY_NORMAL` | `pulse_daily_aggregates`: günde 1 satır |
-| 2 | 12 – 15 Eki | Hiç girmedi | `consecutive_inactive_days` her gece +1 | `STEADY` (henüz eşik aşılmadı) | Sadece günlük özet satırları (0 dk) |
+| 2 | 12 – 15 Eki | Yazılılarına okul notlarından çalıştı, Doping'e girmedi | `consecutive_inactive_days` her gece +1 | `STEADY` (henüz eşik aşılmadı) | Sadece günlük özet satırları (0 dk) |
 | 3 | **16 Eki 03:00** | Uyuyor | 4 inaktif gün ≥ kişisel eşik 4 | `RESTART` / `RESTART_CHECKIN_PENDING` | Durum + audit log + outbox, ardından check-in kartı |
 | 3b | 16 Eki 09:00 – 09:30 | Okulda | Sessiz saatler bitti | değişmedi | Ertelenen push gönderilir: "Birkaç gündür görüşemedik, her şey yolunda mı?" |
 | 4 | 16 Eki 12:30 | Bildirime dokunup uygulamayı açtı | Aktif check-in kartı var | değişmedi | `GET /pulse/me/status` |
@@ -243,14 +243,16 @@ Durum tablosu, audit log ve outbox yine tek transaction'da yazılır. Ece artık
 | **Dönüşte 4 gün tutturamasaydı** | 28 Eki 12:32'de toparlanma penceresi kapanır. | Sonraki nightly batch'te `BOOST`. Ece cezalandırılmaz, hafifletilmiş programla devam eder. |
 | **Ece `HOLDOUT` grubunda olsaydı** | Adım 1 ve 2 aynen olur (durum hesaplanır, audit log yazılır), Adım 3 atlanır. | Kart, bildirim ve dondurma olmaz. `GET /pulse/me/status`, `activeIntervention: null` döner. Bu fark, RFC-007 §5'teki uplift ölçümünün temelidir. |
 | **Ece hafta sonu çalışan Mert olsaydı** | Baseline: 14 günde 4 aktif gün (iki hafta sonu), ort. ~17 dk/gün, `maxGapDays = 5` (pazartesi–cuma). | Kişisel eşik `clamp(5 + 2, 4, 7) = 7` gün. Hafta içindeki 5 günlük normal boşlukta alarm çalmaz; 7. sessiz günde, yani bir hafta sonunu da kaçırdığında RESTART olur. |
+| **Ece yazılılarına Doping'den çalışsaydı** | Ece 4 gün boyunca günde ~2 saat okul konularına çalışır. Aktif gün içerikten bağımsız olduğu için `consecutive_inactive_days = 0`; YKS planındaki görevleri yapmadığı için WCR %50'nin altına düşer, ama tempo oranı (3 × 90 + 4 × 120) ÷ (90 × 7) ≈ 1,2 olur (normalinden fazla çalışıyor). | **RESTART da BOOST da tetiklenmez**, Ece `STEADY` kalır. BOOST'a girmek için WCR < %50 **ve** tempo oranı < %70 gerekir (RFC-001 §4.2). Böylece en yoğun çalıştığı haftada Ece'ye "temposu düştü" muamelesi yapılmaz. |
 
 ---
 
 ## 5. Modellemenin Netleştirdiği Kurallar
 
-Bu senaryo gün gün işletilirken iki kural boşluğu bulundu ve ilgili RFC'lerde düzeltildi:
+Bu senaryo gün gün işletilirken üç kural boşluğu bulundu ve ilgili RFC'lerde düzeltildi:
 
 | Bulgu | Düzeltme |
 | :--- | :--- |
 | `SCHOOL_EXAMS` dondurması bittiği gece öğrencinin 4 başarılı günü olamayacağı için, dondurulan her öğrenci otomatik `BOOST`'a düşüyordu. | `adaptation_expires_at` = adaptasyon bitişi + 5 günlük toparlanma penceresi (RFC-001 §3, RFC-004 §4). |
 | Kartların ömrü 24 saatti, ama `RESTART_UNRESPONSIVE` 48 saat bekliyordu. Kart, öğrenci "yanıtsız" sayılmadan önce siliniyordu. | `CHECK_IN_SURVEY` kartının TTL'i 48 saat (RFC-004 §5.1). |
+| BOOST kuralı yalnızca plandaki görevlerin tamamlanma oranına (WCR) bakıyordu. Yazılılarına Doping'den okul konularıyla çalışan bir öğrencinin WCR'ı düşüyor ve sistem onu, en yoğun çalıştığı haftada "temposu düştü" diye BOOST'a alıyordu. | BOOST girişine ikinci koşul: son 7 günün çalışma süresi öğrencinin normalinin %70'inin altında olmalı (RFC-001 §4.2). "Plana uymuyor" ile "çalışmıyor" artık ayrı durumlar. |
