@@ -129,7 +129,7 @@ stateDiagram-v2
 | `ASSIGNED / VIEWED → EXPIRED` | Gece temizlik işi | TTL doldu (varsayılan 24 saat, `CHECK_IN_SURVEY` için 48 saat); kart arşivlenir |
 
 ### 5.1. Backoff Kuralları
-1. **Günde En Fazla 1 Aktif Müdahale:** Öğrenciye aynı gün içinde asla birden fazla müdahale kartı sunulmaz (`active_intervention_id` doluyken yeni kart üretilmez).
+1. **Günde En Fazla 1 Aktif Müdahale:** Öğrenciye aynı gün içinde asla birden fazla müdahale kartı sunulmaz (`active_intervention_id` doluyken yeni kart üretilmez). **Tek istisna RESTART check-in kartıdır:** Öğrenci RESTART'a girdiğinde aktif bir kart varsa (örn. bir gün önce üretilmiş, süresi henüz dolmamış bir BOOST kartı) o kart `EXPIRED` yapılır ve yerine check-in kartı geçer. Aksi halde check-in, yani kopuşu anlamanın tek yolu, daha az önemli bir kart yüzünden engellenirdi.
 2. **Dismissal Backoff:**
    * **1. Kapatma:** Sistem 24 saat boyunca yeni müdahale üretmez.
    * **2. Kapatma:** Sistem 48 saat boyunca yeni müdahale üretmez.

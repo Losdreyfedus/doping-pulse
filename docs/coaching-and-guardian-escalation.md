@@ -28,16 +28,20 @@ Eskalasyon motoru 4 seviyeli bir eskalasyon matrisi işletir:
 ```mermaid
 flowchart TD
     T1[Tier 1: Dijital Mikro-Müdahale] -->|48 Saat Yanıtsız| T2[Tier 2: Doping Koçluk Paneli Alarmı]
-    T2 -->|7 Gün Toplam İnaktivite| T3[Tier 3: Veli Uygulaması & SMS Bilgilendirmesi]
-    T3 -->|14 Gün Kritik İnaktivite| T4[Tier 4: VIP Geri Kazanım & Çağrı Merkezi Kuyruğu]
+    T2 -->|Eşik + 3 gün| T3[Tier 3: Veli Uygulaması & SMS Bilgilendirmesi]
+    T3 -->|Eşik + 10 gün| T4[Tier 4: VIP Geri Kazanım & Çağrı Merkezi Kuyruğu]
 ```
 
 | Seviye | Tetiklenme Koşulu | Hedef Kitle | Kanal | Aksiyon |
 | :--- | :--- | :--- | :--- | :--- |
 | **Tier 1 (Soft)** | Durum `BOOST` veya `RESTART_CHECKIN_PENDING` | Öğrenci | Mobil Push / In-App Modal | Mikro-görev kartı veya 2 soruluk check-in anketi. |
 | **Tier 2 (Coach)** | `RESTART_UNRESPONSIVE` (Ankete 48 saat yanıt yok) OR `ACTIVATE_STALLED` (5 gün hareketsiz) | Doping Öğrenci Koçu | Koç CRM Dashboard & WebSocket | Koçun günlük görüşme listesine otomatik "Kopuş Riski" görevi atanır. |
-| **Tier 3 (Guardian)** | 7+ gün ardışık sıfır aktivite (`ACTIVATE_CRITICAL` veya `RESTART` 7. gün) | Veli | Veli Mobil Uygulaması Push + SMS | Veliye durum özeti ve tek tıkla koç randevusu alma butonu. |
-| **Tier 4 (Churn)** | 14+ gün inaktif AND Veli/Öğrenci teması kurulamadı | Başarı / Retansiyon Ekibi | CRM Outbound Çağrı Kuyruğu | Birebir telefon araması ile churn önleme görüşmesi. |
+| **Tier 3 (Guardian)** | RESTART akışında ters streak ≥ E + 3 (E = kişisel eşik, `restart_threshold_days`); ACTIVATE akışında `ACTIVATE_CRITICAL` (7. gün) | Veli | Veli Mobil Uygulaması Push + SMS | Veliye durum özeti ve tek tıkla koç randevusu alma butonu. |
+| **Tier 4 (Churn)** | Ters streak ≥ E + 10 (ACTIVATE akışında 14. gün) AND veli/öğrenci teması kurulamadı | Başarı / Retansiyon Ekibi | CRM Outbound Çağrı Kuyruğu | Birebir telefon araması ile churn önleme görüşmesi. |
+
+> **Göreli günler:** RESTART akışındaki eskalasyon günleri sabit değil, öğrencinin kişisel eşiğine (E) göre sayılır (RFC-001 §4.6). Her gün çalışan bir öğrenci için (E = 4) veli bilgilendirmesi 7. günde, çağrı merkezi 14. günde devreye girer; sadece hafta sonu çalışan bir öğrenci için (E = 7) bu günler 10 ve 17 olur. Böylece her öğrenci, velisine haber gitmeden önce check-in ile kendisiyle konuşulma fırsatı bulur.
+>
+> **Dondurma istisnası:** Öğrenci dondurmadayken (`is_paused = true`) ters streak artmaz ve hiçbir eskalasyon basamağı tetiklenmez (RFC-001 §4.6). Check-in'de "sınavlarım var" diyerek hedeflerini donduran bir öğrencinin velisine, dondurma süresince bildirim gitmez.
 
 ---
 
@@ -56,7 +60,7 @@ CREATE TABLE pulse_escalation_records (
     tier                escalation_tier_enum NOT NULL,
     channel             escalation_channel_enum NOT NULL,
     status              escalation_status_enum NOT NULL DEFAULT 'TRIGGERED',
-    trigger_reason      VARCHAR(128) NOT NULL, -- 'UNRESPONSIVE_CHECKIN_48H', 'INACTIVE_7_DAYS'
+    trigger_reason      VARCHAR(128) NOT NULL, -- 'UNRESPONSIVE_CHECKIN_48H', 'INACTIVE_E_PLUS_3', 'INACTIVE_E_PLUS_10'
     assigned_coach_id   UUID NULL,             -- Görev atanan koç ID
     recipient_contact   VARCHAR(64) NULL,      -- Maskelenmiş veli telefon veya email
     payload_metadata    JSONB NOT NULL DEFAULT '{}'::jsonb,
@@ -83,9 +87,10 @@ Tier 2 seviyesinde, Pulse motoru Doping Koçluk Sistemi'ne asenkron bir webhook 
   "studentName": "Ahmet Yılmaz",
   "gradeLevel": "12_YKS_SAYISAL",
   "escalationTier": "TIER_2_COACH",
-  "alertReason": "Öğrenci 4 gün önce ReStart anketine alındı fakat 48 saattir sisteme girmedi.",
+  "alertReason": "Öğrenci 2 gün önce ReStart check-in anketine alındı ve 48 saattir yanıt vermedi.",
   "contextSummary": {
-    "consecutiveInactiveDays": 5,
+    "consecutiveInactiveDays": 6,
+    "restartThresholdDays": 4,
     "lastStudiedTopic": "Matematik - Trigonometri 2",
     "historicalDailyAverageMinutes": 45,
     "currentPulseState": "RESTART",
@@ -108,7 +113,7 @@ Tier 3 seviyesinde veliye gönderilecek içerikler şablon motoruyla üretilir:
 * **Deep Link:** `dopingveli://coaching/book-session?studentId=c3a1b8d2`
 
 ### 5.2. Veli SMS Şablonu
-> *"Sayın Velimiz, öğrencimiz Ahmet Yılmaz'ın Doping Hafıza çalışma serisinde 7 günlük bir duraksama tespit ettik. Öğrencimizin motivasyonunu desteklemek için haftalık hedeflerini yeniden düzenleyebilir veya koçluk desteği talep edebilirsiniz: https://doping.link/koc-destek"*
+> *"Sayın Velimiz, öğrencimiz {{student.first_name}} için Doping Hafıza çalışma serisinde {{student.inactive_days}} günlük bir duraksama tespit ettik. Öğrencimizin motivasyonunu desteklemek için haftalık hedeflerini yeniden düzenleyebilir veya koçluk desteği talep edebilirsiniz: https://doping.link/koc-destek"*
 
 ---
 

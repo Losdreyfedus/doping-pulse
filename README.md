@@ -17,7 +17,7 @@ Bu doküman seti, kod yazmadan uçtan uca bir backend tasarımı olarak hazırla
    *Müdahale:* Net, düşük eşikli mikro-görev ("Bugün sadece 4 dakikalık giriş videosunu izle").
 2. **🟡 Boost (Ritmini Güçlendir):** Çalışmaya devam ediyor ancak hedeflerinin altında kalıyor, tempo düzensizleşiyor.  
    *Müdahale:* Suçluluk hissettirmeden hedefleri dinamik küçültme (%40 hafifletme), ritmi koruma desteği.
-3. **🔴 ReStart (Koptuysan Yeniden Başlat):** Düzenli çalışırken anlamlı ve ani bir kopuş yaşıyor (4+ gün sıfır aktivite).  
+3. **🔴 ReStart (Koptuysan Yeniden Başlat):** Düzenli çalışırken anlamlı ve ani bir kopuş yaşıyor (kişisel eşiğe göre 4–7 gün hiç çalışmama).  
    *Müdahale:* Yargılamayan 2 soruluk check-in ("Seni ne zorladı?") → kök nedeni anla → kişiselleştirilmiş program uyarlaması.
 4. **⚪ Steady (Akışta Kal):** Hedef temposunda stabil ilerleyen öğrenci.  
    *Müdahale:* Rahatsız etmeme ilkesi; kart gösterilmez, sadece streak takibi yapılır.

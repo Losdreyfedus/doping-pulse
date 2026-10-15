@@ -32,7 +32,7 @@ Sistem 4 ana durum ve operasyonel derinlik için tanımlanmış alt durumlardan 
 
 [BOOST]     --> Çalışıyor ama ritim/tempo yetersiz veya kırılgan
    ├── BOOST_STREAK_BROKEN (Seri bozulması: Düzenli giderken 2 gün aksatan)
-   ├── BOOST_LOW_PACE      (Tempo düşüklüğü: Hedefinin <%50'sinde kalan)
+   ├── BOOST_LOW_PACE      (Tempo düşüklüğü: Hedefinin <%50'sinde kalan ve temposu normalinin <%70'ine düşen)
    └── BOOST_BURNOUT_RISK  (Aşırı yük: Hedefleri sürekli yarım bırakan)
 
 [RESTART]   --> Daha önce aktifken belirgin ve anlamlı kopuş yaşayan
@@ -56,10 +56,10 @@ Aşağıdaki tablo, durumlar arası geçiş koşullarını, tetikleyici mekanizm
 | **[*]** | **ACTIVATE** | Event: `StudentEnrolledEvent` | Paket aktif, baseline aktivite yok | Yok (Başlangıç) |
 | **ACTIVATE** | **STEADY** | Event: `MilestoneCompletedEvent` | **"Aha! moment"** (bkz. §4.1): Bir videonun ≥ %80'i **ve** en az 180 sn'si izlendi **VEYA** kümülatif ≥ 5 soru çözüldü | Anında |
 | **ACTIVATE** | **ACTIVATE_CRITICAL** | Nightly batch | Kayıt üzerinden ≥ 7 gün geçti AND toplam aktivite süresi = 0 | 24 saat |
-| **STEADY** | **BOOST** | Nightly batch | **(** Son 7 günlük hedef tamamlama (WCR) < %50 **VE** tempo oranı < %70 **)** **VEYA** seri bozulması (önceki 10 günde ≥ 6 aktif gün varken ardışık 2 gün inaktif) | 48 saat Cooldown |
+| **STEADY** | **BOOST** | Nightly batch | **(** Son 7 günlük hedef tamamlama (WCR) < %50 **VE** tempo oranı < %70 **)** **VEYA** seri bozulması (inaktif seri başlamadan önceki 10 günde ≥ 6 aktif gün varken ardışık ≥ 2 gün inaktif) | 48 saat Cooldown |
 | **STEADY** | **RESTART** | Nightly batch | **Kişisel baseline** (bkz. §4.5): Kopuş öncesi 14 günde ≥ 4 aktif gün **AND** ortalama ≥ 10 dk/gün **AND** ardışık inaktif gün ≥ `restart_threshold_days` | Anında (Cooldown'u deler) |
 | **BOOST** | **STEADY** | Batch / Event | Ardışık 3 "başarılı gün" (o günün *efektif/hafifletilmiş* hedefinin ≥ %80'i tamamlandı) | 72 saat stabilite |
-| **BOOST** | **RESTART** | Nightly batch | Ardışık inaktif gün ≥ max(5, `restart_threshold_days`) | Anında (Cooldown'u deler) |
+| **BOOST** | **RESTART** | Nightly batch | Ardışık inaktif gün ≥ `restart_threshold_days` (STEADY ile aynı kişisel eşik; bkz. §4.6) | Anında (Cooldown'u deler) |
 | **RESTART** | **BOOST** | Event: `CheckInSubmittedEvent` | Anket yanıtı `BURNOUT` (hedefler 5 gün %60 hafifletilir, `BOOST_BURNOUT_RISK`) | Anında |
 | **RESTART** | **ACTIVATE** | Event: `CheckInSubmittedEvent` | Anket yanıtı `OTHER` (temiz sayfa, `ACTIVATE_ONBOARDING`) | Anında |
 | **RESTART_CHECKIN_PENDING** | **RESTART_ADAPTED** | Event: `CheckInSubmittedEvent` | Anket yanıtı `SCHOOL_EXAMS`, `SUBJECT_DIFFICULTY` veya `TECHNICAL_ISSUE` (eylemler: RFC-004 §4) | Anında |
@@ -100,7 +100,7 @@ Aşağıdaki tablo, durumlar arası geçiş koşullarını, tetikleyici mekanizm
   * **BOOST_LOW_PACE kuralı:** WCR < 0.50 **VE** tempo oranı < 0.70 ise → `BOOST_LOW_PACE`.
     * **Neden iki koşul?** WCR yalnızca öğrencinin *plandaki* görevlerini ölçer. Yazılı haftasında okul konularına Doping'den çalışan bir öğrencinin WCR'ı düşer ama çalışma süresi düşmez. Tek başına WCR, hayatının en yoğun çalıştığı haftada öğrenciye "temposu düştü" muamelesi yapardı. Tempo oranı "plana uymuyor" ile "çalışmıyor" durumlarını ayırır.
     * **Yeni öğrenci istisnası:** Önceki 14 günde hiç çalışma verisi yoksa (örn. STEADY'ye yeni geçmiş öğrenci) tempo oranı hesaplanamaz; bu durumda yalnızca WCR'a bakılır.
-  * **Seri Bozulması:** Öğrencinin geçmiş 10 günde en az 6 gün çalışması varken, ardışık 2 gün hiç girmemesi.
+  * **Seri Bozulması:** Öğrencinin inaktif seri başlamadan önceki 10 günde en az 6 gün çalışmış olması ve ardından ardışık en az 2 gün hiç çalışmaması. Cooldown yüzünden 2. günde tetiklenemezse sonraki gecelerde tetiklenebilir. Pencere, kişisel baseline'daki gibi kopuşun başına sabitlenir; sayılan 2 sessiz gün pencereye girmez.
 * **Müdahale Stratejisi:**
   * Asla *"Çok geridesin, daha çok çalışmalısın!"* denmez.
   * **Hedef Hafifletme:** Günlük soru hedefi varsayılan olarak %40 kırpılır (`factor: 0.6`; şablon `config_payload`'ından %30 – %50 aralığında ayarlanabilir). Öğrenciye *"Bugün sadece 15 soru çözmen yeterli"* hissi verilir. `BURNOUT` anket yanıtında bu oran %60'tır (`factor: 0.4`, bkz. RFC-004 §4).
@@ -110,8 +110,8 @@ Aşağıdaki tablo, durumlar arası geçiş koşullarını, tetikleyici mekanizm
 ### 4.3. 🔴 RESTART Motoru
 * **Problem:** Düzenli çalışan öğrenci birden kayboldu. Bu öğrenciye sıradan bir "Hadi çalış" bildirimi atmak ters teper; çünkü arkasında bir hayat olayı vardır (Hastalık, okul sınav haftası, burnout veya zor bir konuya takılma).
 * **Tespit Koşulu:** Öğrencinin **kendi normaline göre** anlamlı bir kopuş yaşaması gerekir. Mutlak bir dakika eşiği kullanılmaz; hesaplama §4.5'teki Kişisel Baseline algoritmasıyla yapılır:
-  * Öğrencinin kopuş öncesinde gerçek bir çalışma alışkanlığı olmalıdır (baseline penceresinde ≥ 4 aktif gün, ortalama ≥ 10 dk/gün).
-  * Ardışık inaktif gün sayısı öğrencinin kişisel eşiğini (`restart_threshold_days`, 4–7 gün arası) aşmalıdır.
+  * STEADY'den doğrudan RESTART'a geçiş için öğrencinin kopuş öncesinde gerçek bir çalışma alışkanlığı olmalıdır (baseline penceresinde ≥ 4 aktif gün, ortalama ≥ 10 dk/gün). BOOST'taki öğrenci için bu şart aranmaz; BOOST'a düşmüş olması zaten aktif bir geçmişi gösterir.
+  * Ardışık inaktif gün sayısı öğrencinin kişisel eşiğine (`restart_threshold_days`, 4–7 gün arası) ulaşmalıdır.
 * **Proaktif Müdahale: Check-In Döngüsü:**
   1. Sisteme girdiğinde ana ekran kilitlenmez ancak en üstte şefkatli bir mini anket çıkar:  
      *"Birkaç gündür görüşemedik, her şey yolunda mı?"*
@@ -126,7 +126,7 @@ Aşağıdaki tablo, durumlar arası geçiş koşullarını, tetikleyici mekanizm
   3. **Yanıtsızlık Durumu:** Check-in kartı 48 saat boyunca yanıtlanmazsa, durum `RESTART_UNRESPONSIVE` olur ve veli/koç panelinde risk bayrağı (`CHURN_RISK_HIGH`) kalkar.
 
 ### 4.4. ⚪ STEADY Motoru
-* Öğrencinin haftalık hedeflerinin ≥ %70'ini tutturduğu, çalışma aralıklarının 48 saati aşmadığı sağlıklı çalışma durumudur.
+* Öğrencinin haftalık hedeflerinin ≥ %70'ini tutturduğu (ya da plan dışında da olsa kendi normal temposunda çalıştığı, bkz. §4.2), çalışma aralıklarının kendi normalini (kişisel eşiğini) aşmadığı sağlıklı çalışma durumudur.
 * **Önemli Kural:** Bu durumdaki öğrenciye "müdahale kartı" gösterilmez. Sadece tebrik, seviye atlama ve streak sayaçları gösterilir.
 
 ### 4.5. 📐 Kişisel Baseline Hesaplaması
@@ -154,7 +154,7 @@ Zaman ekseni (gün):
 | `baseline_active_days` | Penceredeki aktif gün sayısı | Gerçek bir alışkanlık var mı? (Eşik: ≥ 4) |
 | `baseline_avg_minutes` | toplam izleme dakikası ÷ 14 | Gürültü filtresi (Eşik: ≥ 10 dk/gün) |
 | `baseline_max_gap` | Penceredeki iki aktif gün arasındaki en uzun inaktif seri | Öğrencinin *normal* boşluk uzunluğu |
-| `restart_threshold_days` | `clamp(baseline_max_gap + 2, 4, 7)` | Kişisel kopuş eşiği |
+| `restart_threshold_days` | `clamp(baseline_max_gap + 2, 4, 7)`; penceredeki aktif gün sayısı 4'ün altındaysa (boşluk güvenilir ölçülemez) **7** | Kişisel kopuş eşiği |
 
 **Örnekler:**
 
@@ -163,9 +163,34 @@ Zaman ekseni (gün):
 | YKS derece öğrencisi | Her gün ~90 dk | 0 | **4 gün** | 4. sessiz günde RESTART |
 | Düzenli LGS öğrencisi | Gün aşırı ~30 dk | 1 | **4 gün** | 4. sessiz günde RESTART |
 | Hafta sonu çalışanı | Sadece cumartesi ve pazar ~60 dk (ort. ~17 dk/gün) | 5 | **7 gün** | Hafta içindeki normal 5 günlük boşluğunda alarm *çalmaz*, 7. sessiz günde RESTART |
-| Seyrek kullanıcı | 14 günde 2 aktif gün | — | — | Alışkanlık yok → RESTART değil; BOOST/WCR kurallarıyla izlenir |
+| Seyrek kullanıcı | 14 günde 2 aktif gün | — | **7 gün** (aktif gün < 4, üst sınır) | Alışkanlık yok → STEADY'den doğrudan RESTART'a geçmez; BOOST/WCR kurallarıyla izlenir. BOOST'a düştükten sonra 7. sessiz günde RESTART olur (BOOST zaten aktif bir geçmişi gösterir). |
 
 **Performans Notu:** Hesap, `pulse_daily_aggregates` üzerinde öğrenci başına tek bir indeksli aralık sorgusudur (en fazla 14 + 7 = 21 satır). `idx_daily_aggregates_window` indeksiyle karşılanır (RFC-002 §3.2).
+
+### 4.6. 🪜 Ters Streak Merdiveni
+
+Öğrencinin çalıştığı ardışık günler streak ile sayıldığı gibi, çalışmadığı ardışık günler de **ters streak** ile sayılır: `pulse_student_states.consecutive_inactive_days`.
+
+* **Sayım kuralı:** Her gece, biten gün aktif gün değilse (bkz. §4.5: `watch_seconds >= 300 OR questions_solved >= 5`) sayaç 1 artar; aktif bir gün olduğunda 0'a döner.
+* **Dondurmada durur:** Öğrenci dondurmadayken (`is_paused = true`; sınav dondurması, teknik sorun, öğrencinin kendi isteği) sayaç artmaz ve eskalasyon basamakları çalışmaz. Dondurmanın başladığı ve bittiği yarım günler de dahil, herhangi bir anı dondurmada geçen inaktif gün sayacı artırmaz (`pulse_daily_aggregates.was_paused`; dondurma başladığında o günün satırı, dondurma süresince her günün satırı ve dondurmanın bittiği günün satırı `true` olarak işaretlenir). O gün çalışılmışsa sayaç yine 0'a döner. Dondurma bitince sayaç kaldığı yerden devam eder. Aksi halde "sınavlarım var" diyerek izin alan bir öğrencinin velisine, dondurmanın ortasında "7 gündür çalışmıyor" mesajı giderdi.
+* **Durumdan bağımsızdır:** Sayaç kopuşun başladığı günden itibaren sayılır. Öğrenci arada `BOOST`'a geçse de sıfırlanmaz ya da yeniden başlamaz. Bu yüzden `BOOST → RESTART` geçişi de STEADY ile aynı kişisel eşiği kullanır; ara bir duruma geçmek RESTART'ı geciktirmez.
+* **Eşik saklanır:** RESTART'a girişte hesaplanan kişisel eşik `pulse_student_states.restart_threshold_days` kolonuna yazılır. Eskalasyon motoru (RFC-005) sonraki basamakları bu değere göre sayar. Baseline penceresi kopuşun başına sabitlendiği için eşik, kopuş boyunca değişmez.
+
+Tüm aksiyonlar bu tek sayaca bağlı bir merdiven oluşturur. `E` öğrencinin kişisel eşiğidir (`restart_threshold_days`, 4–7):
+
+| Ters Streak | Basamak | Aksiyon | Ece (her gün çalışır, E = 4) | Mert (hafta sonu çalışır, E = 7) |
+| :--- | :--- | :--- | :---: | :---: |
+| 1 | Normal ara | Hiçbir şey | 1. gün | 1. gün |
+| 2 | Seri bozulması (yalnızca seriden önceki 10 günde ≥ 6 aktif günü olan öğrenci) | `BOOST_STREAK_BROKEN`: hedefler %40 hafifletilir | 2. gün | — (düzenli her gün çalışmıyor) |
+| E | Kopuş | `RESTART`: yargılamayan check-in anketi | 4. gün | 7. gün |
+| E + 2 | Anket 48 saattir yanıtsız | `RESTART_UNRESPONSIVE`: koç paneline görev (Tier 2) | 6. gün | 9. gün |
+| E + 3 | Kopuş sürüyor | Veli bilgilendirmesi (Tier 3) | 7. gün | 10. gün |
+| E + 10 | Kritik kopuş, temas kurulamadı | Çağrı merkezi araması (Tier 4) | 14. gün | 17. gün |
+
+* **Sıra her öğrenci için aynıdır:** E ne olursa olsun koç, veliden önce; veli, çağrı merkezinden önce devreye girer. Değişen yalnızca basamakların hangi güne denk geldiğidir.
+* **Neden göreli günler?** Sabit günler kullanılsaydı (örn. "7. gün veli") Mert'in velisine, Mert RESTART'a düştüğü gün mesaj giderdi; Mert'e check-in'e yanıt verme şansı bile tanınmazdı. Göreli günlerle her öğrenci önce kendisiyle konuşma fırsatı bulur.
+* **Merdivenden çıkış:** Öğrenci herhangi bir basamakta aktif bir gün geçirdiğinde ters streak 0'a döner. Açık eskalasyon kayıtları otomatik olarak çözülür (RFC-005 §6) ve öğrenci durumuna göre `STEADY`'ye dönüş kurallarıyla (§3) devam eder.
+* **ACTIVATE istisnası:** Hiç çalışma geçmişi olmayan `ACTIVATE` öğrencisinin baseline'ı, dolayısıyla E'si yoktur. Bu öğrenciler için sabit günler geçerlidir: 5. gün koç (`ACTIVATE_STALLED`), 7. gün veli (`ACTIVATE_CRITICAL`), 14. gün çağrı merkezi (RFC-005 §2).
 
 ---
 
@@ -233,6 +258,16 @@ RESTART_EXIT_SUCCESS_DAYS  = 4
 BASELINE_MIN_ACTIVE_DAYS   = 4
 BASELINE_MIN_AVG_MINUTES   = 10.0
 
+def update_inactive_streak(state_row, day: DailyAggregate) -> None:
+    """Gece batch'inde, değerlendirmeden ÖNCE biten gün için çalışır (§4.6)."""
+    is_active_day = day.watch_seconds >= 300 or day.questions_solved >= 5
+    if is_active_day:
+        state_row.consecutive_inactive_days = 0   # Dondurmada da olsa çalışılan gün sayacı sıfırlar
+    elif day.was_paused:
+        pass                                      # Dondurmada geçen (yarım) inaktif gün sayacı artırmaz
+    else:
+        state_row.consecutive_inactive_days += 1
+
 def evaluate_student_pulse(student_id: UUID, ctx: PulseEvaluationContext) -> PulseEvaluationResult:
     state, sub_state = ctx.current_state, ctx.current_sub_state
     now = current_timestamp()
@@ -270,13 +305,16 @@ def evaluate_student_pulse(student_id: UUID, ctx: PulseEvaluationContext) -> Pul
         b = ctx.anchored_baseline   # inaktif seri başlamadan önceki 14 gün
         has_habit = (b.active_days >= BASELINE_MIN_ACTIVE_DAYS
                      and b.avg_minutes >= BASELINE_MIN_AVG_MINUTES)
-        threshold = b.restart_threshold_days                  # clamp(max_gap + 2, 4, 7)
+        threshold = b.restart_threshold_days                  # clamp(max_gap + 2, 4, 7); aktif gün < 4 ise 7
         if state == PulseState.BOOST:
-            threshold = max(5, threshold)
+            # Eşik STEADY ile aynıdır: ters streak, öğrenci BOOST'a ara adım olarak girse de
+            # kopuşun başından sayılır; ara durum RESTART'ı geciktirmemelidir (§4.6).
             has_habit = True                                  # BOOST zaten aktif geçmişi ima eder
         if has_habit and inactive_days >= threshold:
+            # Eşik restart_threshold_days kolonuna yazılır; eskalasyon basamakları buna göre sayılır (§4.6)
             return transition(PulseState.RESTART, "RESTART_CHECKIN_PENDING",
-                              f"INACTIVE_{inactive_days}D_PERSONAL_THRESHOLD_{threshold}D")
+                              f"INACTIVE_{inactive_days}D_PERSONAL_THRESHOLD_{threshold}D",
+                              restart_threshold_days=threshold)
 
     # Cooldown koruması: RESTART girişi dışındaki tüm geçişler 48 saat bekler
     if is_in_cooldown:
@@ -290,7 +328,7 @@ def evaluate_student_pulse(student_id: UUID, ctx: PulseEvaluationContext) -> Pul
         tempo_dropped = tempo_ratio is None or tempo_ratio < BOOST_ENTRY_TEMPO_RATIO
         if wcr_7d < BOOST_ENTRY_WCR and tempo_dropped:
             return transition(PulseState.BOOST, "BOOST_LOW_PACE", f"WCR_{wcr_7d:.2f}_TEMPO_{tempo_ratio or 0:.2f}")
-        if ctx.streak_broken_recently:   # önceki 10 günde >= 6 aktif gün + ardışık 2 gün inaktif
+        if ctx.streak_broken_recently:   # seriden önceki 10 günde >= 6 aktif gün + ardışık >= 2 gün inaktif
             return transition(PulseState.BOOST, "BOOST_STREAK_BROKEN", "STREAK_BROKEN_2_DAYS")
 
     # -------------------------------------------------------------
@@ -320,7 +358,7 @@ def evaluate_student_pulse(student_id: UUID, ctx: PulseEvaluationContext) -> Pul
 ## 7. Edge Caseler ve İstisnai Durumlar
 
 1. **Sınav Haftaları & Resmi Tatiller:**  
-   Milli Eğitim Bakanlığı (MEB) sınav haftalarında veya sömestr tatilinde tüm Türkiye genelinde çalışma süreleri düşer. Karar motoru genel takvim servisine (`AcademicCalendarService`) bağlanarak bu haftalarda eşikleri dinamik olarak %40 gevşetir. Böylece on binlerce öğrenci haksız yere `RESTART` durumuna düşürülmez.
+   Milli Eğitim Bakanlığı (MEB) sınav haftalarında veya sömestr tatilinde tüm Türkiye genelinde çalışma süreleri düşer. Karar motoru genel takvim servisine (`AcademicCalendarService`) bağlanarak bu haftalarda BOOST eşiklerini %40 gevşetir: WCR eşiği 0.50'den 0.30'a, tempo eşiği 0.70'ten 0.42'ye iner. Böylece on binlerce öğrenci haksız yere `BOOST`'a düşürülmez. Kişisel eşik (E) ve dolayısıyla RESTART ise değişmez: sınav haftasında tamamen kopan öğrenciyle check-in ile konuşmak istiyoruz; anketteki `SCHOOL_EXAMS` seçeneği tam da bu durum için var.
 2. **Kasıtlı Dondurma:**  
    Öğrenci check-in anketinde veya ayarlar menüsünde "Bu hafta hasta/yoğunum" bildiriminde bulunmuşsa, öğrenciye `PAUSED` bayrağı konur ve motor bu öğrenciyi değerlendirme dışı bırakır.
 3. **Müdahaleyi Kapatma:**  

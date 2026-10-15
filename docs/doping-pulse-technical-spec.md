@@ -60,9 +60,9 @@ stateDiagram-v2
 | 2 | `ACTIVATE → STEADY` | Bir videonun ≥ %80'i ve ≥ 180 sn'si izlendi **VEYA** kümülatif ≥ 5 soru çözüldü |
 | 3 | `ACTIVATE → ACTIVATE` | Aktivite yok; düşük eşikli mikro-görev devam eder (7. günde `ACTIVATE_CRITICAL`) |
 | 4 | `STEADY → BOOST` | Son 7 günde efektif hedef tamamlama < %50 **ve** çalışma süresi normalin %70'inin altında **VEYA** seri bozulması |
-| 5 | `STEADY → RESTART` | Kişisel eşik aşıldı: ardışık 4–7 gün sıfır aktivite (RFC-001 §4.5) |
+| 5 | `STEADY → RESTART` | Ters streak kişisel eşiğe ulaştı: ardışık 4–7 gün aktif gün yok (RFC-001 §4.5) |
 | 6 | `BOOST → STEADY` | Ardışık 3 başarılı gün (efektif hedefin ≥ %80'i) |
-| 7 | `BOOST → RESTART` | Ardışık ≥ 5 gün sıfır aktivite |
+| 7 | `BOOST → RESTART` | Ters streak kişisel eşiğe ulaştı (STEADY ile aynı eşik; BOOST'a ara adım olarak girmek RESTART'ı geciktirmez) |
 | 8 | `RESTART → ACTIVATE` | Check-in yanıtı `OTHER` |
 | 9 | `RESTART → BOOST` | Check-in yanıtı `BURNOUT` (hedefler %60 hafifletilir) **VEYA** adaptasyon süresi toparlanma olmadan doldu |
 | 10 | `RESTART → STEADY` | Ardışık 4 başarılı gün |
@@ -72,7 +72,7 @@ stateDiagram-v2
 | Hedef Durum | Tetikleyici Sinyal | Eşik Değer | Örnek Müdahale |
 | :--- | :--- | :--- | :--- |
 | **ACTIVATE** | Kayıt var, henüz "Aha! Moment" yok | Video ≥ %80 ve ≥ 180 sn izlenmedi AND kümülatif < 5 soru | "Bugün sadece 5 dakikalık konuya giriş videosunu izle." (mikro-görev) |
-| **BOOST** | Düşük / Düzensiz tempo | (Son 7 günde efektif hedef tamamlama < %50 AND tempo oranı < %70) OR Seri Bozulması (önceki 10 günde ≥ 6 aktif gün + ardışık 2 gün inaktif) | "Bugünkü hedefini 20 sorudan 12 soruya düşürdük, ritmini koru." (%40 hafifletme) |
+| **BOOST** | Düşük / Düzensiz tempo | (Son 7 günde efektif hedef tamamlama < %50 AND tempo oranı < %70) OR Seri Bozulması (inaktif seriden önceki 10 günde ≥ 6 aktif gün + ardışık ≥ 2 gün inaktif) | "Bugünkü hedefini 20 sorudan 12 soruya düşürdük, ritmini koru." (%40 hafifletme) |
 | **RESTART** | Kişisel normale göre ani kopuş | Kopuş öncesi 14 günde ≥ 4 aktif gün ve ort. ≥ 10 dk/gün AND ardışık inaktif gün ≥ kişisel eşik (4–7 gün, RFC-001 §4.5) | 2 soruluk Mini Check-in: "Seni ne zorladı? (Okul sınavları / Konuyu anlamadım / Yoruldum / Teknik sorun / Diğer)" |
 | **STEADY** | Düzenli çalışma | Hedef tamamlama oranı ≥ %70 | Müdahale yok; tebrik/streak sayacı gösterimi. |
 
@@ -129,7 +129,7 @@ interface StudentPulseSummaryDTO {
   studentId: string;
   pulseState: PulseState;
   pulseSubState: PulseSubState;
-  consecutiveInactiveDays: number;
+  consecutiveInactiveDays: number;       // Ters streak (RFC-001 §4.6)
   streakDays: number;
   isPaused: boolean;
   activeIntervention: InterventionCardDTO | null;   // Günde en fazla 1 aktif kart (RFC-004 §5.1)
@@ -157,9 +157,9 @@ interface InterventionCardDTO {
 interface CheckInSurveySubmissionDTO {
   interventionId: string;
   surveyId: string;
-  selectedReason: 'SCHOOL_EXAMS' | 'SUBJECT_DIFFICULTY' | 'BURNOUT' | 'TECHNICAL_ISSUE' | 'OTHER';
+  selectedOptionKey: 'SCHOOL_EXAMS' | 'SUBJECT_DIFFICULTY' | 'BURNOUT' | 'TECHNICAL_ISSUE' | 'OTHER';
   freeTextNote?: string;
-  // Eylem istemciden gelmez; selectedReason'dan sunucuda türetilir (RFC-004 §4)
+  // Eylem istemciden gelmez; selectedOptionKey'den sunucuda türetilir (RFC-004 §4)
 }
 ```
 
@@ -188,11 +188,11 @@ interface PulseEvaluationContext {
   bestLessonWatchedSeconds: number;     // O videoda izlenen saniye
 
   // --- Tempo metrikleri (efektif/hafifletilmiş hedefe göre, RFC-001 §4.2) ---
-  consecutiveInactiveDays: number;
+  consecutiveInactiveDays: number;       // Ters streak (RFC-001 §4.6)
   last7dEffectiveCompletionRate: number; // WCR, 0.0 - 1.0
   tempoRatio: number | null;             // Son 7 gün çalışma dk ÷ (önceki 14 gün ort. × 7); veri yoksa null
   consecutiveSuccessfulDays: number;     // Efektif hedefin >= %80'i tamamlanan ardışık gün
-  streakBrokenRecently: boolean;         // Önceki 10 günde >= 6 aktif gün + ardışık 2 gün inaktif
+  streakBrokenRecently: boolean;         // Seriden önceki 10 günde >= 6 aktif gün + ardışık >= 2 gün inaktif
 
   // --- Kişisel baseline (RFC-001 §4.5) ---
   anchoredBaseline: AnchoredBaseline;
@@ -203,8 +203,8 @@ interface AnchoredBaseline {
   windowEnd: string;                    // ISO tarih: streak_start - 1 gün
   activeDays: number;                   // Eşik: >= 4
   avgMinutes: number;                   // Eşik: >= 10 dk/gün (14 güne bölünür)
-  maxGapDays: number;                   // Penceredeki en uzun inaktif seri
-  restartThresholdDays: number;         // clamp(maxGapDays + 2, 4, 7)
+  maxGapDays: number;                   // Penceredeki iki aktif gün arasındaki en uzun inaktif seri
+  restartThresholdDays: number;         // clamp(maxGapDays + 2, 4, 7); activeDays < 4 ise 7
 }
 ```
 
@@ -240,18 +240,23 @@ Mobil uygulama ana sayfası açıldığında öğrencinin nabız durumunu ve gö
 {
   "studentId": "c3a1b8d2-45e0-4789-9a21-998877665544",
   "pulseState": "ACTIVATE",
+  "pulseSubState": "ACTIVATE_STALLED",
+  "consecutiveInactiveDays": 3,
   "streakDays": 0,
+  "isPaused": false,
   "activeIntervention": {
     "interventionId": "8f7b3c2a-1122-3344-5566-778899aabbcc",
+    "templateId": "ACTIVATE_FIRST_5M_VIDEO",
     "type": "MICRO_TASK",
-    "badgeTitle": "İlk Adım",
+    "badgeText": "İlk Adım",
     "title": "Bugün sadece bu 4 dakikalık videoyu izle",
     "description": "Programın gözünde büyümesine gerek yok. Sadece bir başlangıç yapıyoruz.",
     "cta": {
       "text": "Videoya Git (4 Dk)",
       "actionType": "DEEP_LINK",
-      "targetPayload": "doping://lesson/matematik/temel-kavramlar-giris"
+      "payload": "doping://lesson/matematik/temel-kavramlar-giris"
     },
+    "dismissible": true,
     "expiresAt": "2026-10-14T23:59:59Z"
   }
 }
@@ -276,8 +281,8 @@ Mobil uygulama ana sayfası açıldığında öğrencinin nabız durumunu ve gö
 * **Event Tipleri:**
   * `IMPRESSION`: Kart ekranda görüntülendi.
   * `CLICK_CTA`: Aksiyon butonuna tıklandı.
-  * `DISMISSED`: Öğrenci kartı kapattı / gizledi.
-  * `COMPLETED`: Hedef mikrogörev başarıyla tamamlandı.
+  * `DISMISS`: Öğrenci kartı kapattı / gizledi.
+  * `COMPLETE`: Hedef mikrogörev başarıyla tamamlandı.
 * **HTTP 204 No Content**
 
 ---
@@ -289,8 +294,8 @@ ReStart aşamasındaki öğrencinin mini anket yanıtını kaydeder ve buna gör
 ```json
 {
   "interventionId": "9e1c2b3a-4455-6677-8899-aabbccddeeff",
-  "surveyId": "RESTART_DEFAULT_V1",
-  "selectedReason": "SCHOOL_EXAMS",
+  "surveyId": "RESTART_CORE_V1",
+  "selectedOptionKey": "SCHOOL_EXAMS",
   "freeTextNote": "Yazılı haftasındaydım, sisteme bakamadım."
 }
 ```
@@ -298,13 +303,13 @@ ReStart aşamasındaki öğrencinin mini anket yanıtını kaydeder ve buna gör
 ```json
 {
   "success": true,
-  "message": "Sınav haftanı biliyoruz! Doping hedeflerini 7 gün dondurduk, sınavlarına odaklan.",
+  "feedbackMessage": "Sınav haftanı biliyoruz! Doping hedeflerini 7 gün dondurduk, sınavlarına odaklan.",
   "newPulseState": "RESTART",
   "newPulseSubState": "RESTART_ADAPTED",
-  "adaptedPlan": {
+  "appliedAdaptation": {
     "actionType": "ACTION_FREEZE_GOALS",
-    "dailyTargetQuestion": 0,
-    "dailyTargetVideoCount": 0,
+    "dailyTargetQuestions": 0,
+    "dailyTargetDurationMinutes": 0,
     "validUntil": "2026-10-20T23:59:59Z"
   }
 }
@@ -395,7 +400,7 @@ sequenceDiagram
 
     Note over PulseEngine,PulseDB: Gece 03:00 Batch Worker (Kopuş Analizi)
     PulseEngine->>PulseDB: Kişisel eşiğini aşan inaktif öğrencileri bul (RFC-001 §4.5)
-    PulseEngine->>PulseDB: STEADY -> RESTART geçişi yap ve Check-in ata
+    PulseEngine->>PulseDB: STEADY/BOOST -> RESTART geçişi yap ve Check-in ata
 
     Student->>App: Uygulamayı Açar
     App->>PulseEngine: GET /pulse/me/status

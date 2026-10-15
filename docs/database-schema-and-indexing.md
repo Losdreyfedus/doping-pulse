@@ -59,7 +59,8 @@ CREATE TABLE pulse_student_states (
     previous_state              pulse_state_enum NULL,
     state_reason                VARCHAR(128) NOT NULL,
     state_updated_at            TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-    consecutive_inactive_days   SMALLINT NOT NULL DEFAULT 0 CHECK (consecutive_inactive_days >= 0),
+    consecutive_inactive_days   SMALLINT NOT NULL DEFAULT 0 CHECK (consecutive_inactive_days >= 0), -- Ters streak (RFC-001 §4.6)
+    restart_threshold_days      SMALLINT NULL CHECK (restart_threshold_days BETWEEN 4 AND 7), -- RESTART girişindeki kişisel eşik; eskalasyon günleri buna göre sayılır
     active_intervention_id      UUID NULL, -- Aktif ekrandaki müdahale (Varsa)
     is_paused                   BOOLEAN NOT NULL DEFAULT FALSE, -- Öğrenci sınav/hastalık dondurması
     paused_until                TIMESTAMPTZ NULL,
@@ -98,6 +99,7 @@ CREATE TABLE pulse_daily_aggregates (
     target_tasks_count          SMALLINT NOT NULL DEFAULT 0 CHECK (target_tasks_count >= 0),
     completed_tasks_count       SMALLINT NOT NULL DEFAULT 0 CHECK (completed_tasks_count >= 0),
     app_sessions_count          SMALLINT NOT NULL DEFAULT 0 CHECK (app_sessions_count >= 0),
+    was_paused                  BOOLEAN NOT NULL DEFAULT FALSE, -- Günün herhangi bir anı dondurmada geçtiyse true; ters streak bu inaktif günü saymaz (RFC-001 §4.6)
     created_at                  TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     PRIMARY KEY (metric_date, student_id)
 ) PARTITION BY RANGE (metric_date);
