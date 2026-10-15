@@ -65,7 +65,7 @@ Aşağıdaki tablo, durumlar arası geçiş koşullarını, tetikleyici mekanizm
 | **RESTART_CHECKIN_PENDING** | **RESTART_ADAPTED** | Event: `CheckInSubmittedEvent` | Anket yanıtı `SCHOOL_EXAMS`, `SUBJECT_DIFFICULTY` veya `TECHNICAL_ISSUE` (eylemler: RFC-004 §4) | Anında |
 | **RESTART_CHECKIN_PENDING** | **RESTART_UNRESPONSIVE** | Saatlik batch | Check-in kartı 48 saat yanıtsız | 48 saat |
 | **RESTART** | **STEADY** | Event / Batch | Ardışık 4 "başarılı gün" | 4 gün stabilite |
-| **RESTART_ADAPTED** | **BOOST** | Nightly batch | Adaptasyon süresi (`paused_until` / eylem süresi) doldu ve 4 başarılı gün koşulu sağlanmadı | Adaptasyon bitimi |
+| **RESTART_ADAPTED** | **BOOST** | Nightly batch | Toparlanma penceresi doldu (`adaptation_expires_at` = adaptasyon eyleminin bitişi + 5 gün) ve 4 başarılı gün koşulu sağlanmadı | Pencere bitimi |
 
 ---
 
@@ -154,7 +154,7 @@ Zaman ekseni (gün):
 | :--- | :--- | :---: | :---: | :--- |
 | YKS derece öğrencisi | Her gün ~90 dk | 0 | **4 gün** | 4. sessiz günde RESTART |
 | Düzenli LGS öğrencisi | Gün aşırı ~30 dk | 1 | **4 gün** | 4. sessiz günde RESTART |
-| Hafta sonu çalışanı | Haftada 2 gün ~60 dk (ort. ~17 dk/gün) | 4 | **6 gün** | Normal 4–5 günlük boşluğunda alarm *çalmaz*, 6. günde RESTART |
+| Hafta sonu çalışanı | Sadece cumartesi ve pazar ~60 dk (ort. ~17 dk/gün) | 5 | **7 gün** | Hafta içindeki normal 5 günlük boşluğunda alarm *çalmaz*, 7. sessiz günde RESTART |
 | Seyrek kullanıcı | 14 günde 2 aktif gün | — | — | Alışkanlık yok → RESTART değil; BOOST/WCR kurallarıyla izlenir |
 
 **Performans Notu:** Hesap, `pulse_daily_aggregates` üzerinde öğrenci başına tek bir indeksli aralık sorgusudur (en fazla 14 + 7 = 21 satır). `idx_daily_aggregates_window` indeksiyle karşılanır (RFC-002 §3.2).

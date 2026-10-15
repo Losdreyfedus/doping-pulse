@@ -63,7 +63,7 @@ CREATE TABLE pulse_student_states (
     active_intervention_id      UUID NULL, -- Aktif ekrandaki müdahale (Varsa)
     is_paused                   BOOLEAN NOT NULL DEFAULT FALSE, -- Öğrenci sınav/hastalık dondurması
     paused_until                TIMESTAMPTZ NULL,
-    adaptation_expires_at       TIMESTAMPTZ NULL, -- RESTART_ADAPTED / BOOST_BURNOUT_RISK adaptasyon bitişi (RFC-001 §3)
+    adaptation_expires_at       TIMESTAMPTZ NULL, -- Toparlanma penceresi sonu: adaptasyon bitişi + 5 gün (RFC-001 §3)
     experiment_arm              VARCHAR(16) NOT NULL DEFAULT 'TREATMENT'
                                 CHECK (experiment_arm IN ('TREATMENT', 'HOLDOUT')), -- Etki ölçümü (RFC-007 §5)
     version                     INTEGER NOT NULL DEFAULT 1, -- Optimistic Locking
@@ -137,7 +137,7 @@ CREATE TABLE pulse_intervention_templates (
     body_template               TEXT NOT NULL,
     cta_text                    VARCHAR(64) NOT NULL,
     cta_action_type             VARCHAR(32) NOT NULL, -- 'DEEP_LINK', 'MODAL_SURVEY', 'MUTATION'
-    default_duration_hours      SMALLINT NOT NULL DEFAULT 24, -- Kartın ekranda kalma ömrü
+    default_duration_hours      SMALLINT NOT NULL DEFAULT 24, -- Kartın ekranda kalma ömrü (CHECK_IN_SURVEY: 48)
     config_payload              JSONB NOT NULL DEFAULT '{}'::jsonb, -- Dinamik alanlar
     is_active                   BOOLEAN NOT NULL DEFAULT TRUE,
     created_at                  TIMESTAMPTZ NOT NULL DEFAULT NOW(),

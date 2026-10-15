@@ -122,4 +122,5 @@ Veliyi ve koçları sürekli bildirimlerle bıktırmamak için motor üzerinde k
    Eğer öğrenci eskalasyon kaydı açıkken sisteme girip herhangi bir dersi tamamlarsa (`LessonWatchedEvent` veya `QuizCompletedEvent`), açık olan tüm eskalasyon kayıtları otomatik olarak `status = 'RESOLVED'` yapılır ve koçun ekranındaki alarm kaldırılır.
 3. **KVKK / İletişim İzinleri Kontrolü:**  
    Veliye herhangi bir SMS veya dış bildirim gönderilmeden önce Doping İletişim İzinleri Servisi (`ConsentService`) doğrulanır; ticari/operasyonel izin yoksa sadece uygulama içi pasif karta izin verilir.
-
+4. **Sessiz Saatler:**  
+   Veliye SMS ve push bildirimleri yalnızca **09:00 – 21:00** (`Europe/Istanbul`) arasında gönderilir. Gece batch'inde tetiklenen Tier 3 bildirimleri aynı sabah 09:00 – 09:30 arasına dağıtılarak gönderilir. Gönderim anında eskalasyon kaydı `RESOLVED` olduysa (öğrenci o arada derse girdiyse) bildirim iptal edilir (RFC-004 §5.1).

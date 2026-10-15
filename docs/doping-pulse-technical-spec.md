@@ -139,7 +139,7 @@ interface InterventionCardDTO {
     payload: string;        // "doping://content/lesson/mat-temel-kavramlar" veya surveyId
   };
   dismissible: boolean;     // Varsayılan: true
-  expiresAt: string;        // ISO-8601, en fazla 24 saat (RFC-004 §5.1)
+  expiresAt: string;        // ISO-8601; 24 saat, check-in kartı 48 saat (RFC-004 §5.1)
 }
 ```
 
@@ -167,7 +167,7 @@ interface PulseEvaluationContext {
   stateUpdatedAt: string;               // Cooldown hesabı (48 saat)
   isPaused: boolean;
   pausedUntil: string | null;
-  adaptationExpiresAt: string | null;   // RESTART_ADAPTED / BOOST_BURNOUT_RISK bitişi
+  adaptationExpiresAt: string | null;   // Toparlanma penceresi sonu: adaptasyon bitişi + 5 gün
   experimentArm: 'TREATMENT' | 'HOLDOUT'; // Motor okumaz; Müdahale Motoru okur (RFC-004 §1)
   version: number;                      // Optimistic Locking için beklenen sürüm
 

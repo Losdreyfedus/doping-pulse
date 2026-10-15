@@ -93,7 +93,9 @@ ReStart durumundaki bir öğrenci mini anketi yanıtladığında (`POST /pulse/c
 | **`TECHNICAL_ISSUE`** | "Uygulamada teknik bir sorun yaşadım." | **`ACTION_ESCALATE_SUPPORT(priority: HIGH)`**<br>Müşteri destek CRM'ine anında yüksek öncelikli bilet açılır; öğrenci destek SLA'sı boyunca (3 gün) değerlendirme dışı tutulur. | `RESTART_ADAPTED` | *"Teknik aksaklık için özür dileriz! Destek ekibimiz hemen seninle iletişime geçecek."* |
 | **`OTHER`** | "Kişisel / Başka bir neden." | **`ACTION_RESET_TO_ACTIVATE`**<br>Program sıfırlanır ve öğrenciye "Temiz bir sayfa aç" seçeneği sunulur. | `ACTIVATE` / `ACTIVATE_ONBOARDING` | *"Hiç sorun değil. İstediğin zaman temiz bir sayfayla sıfırdan başlayabilirsin."* |
 
-`RESTART_ADAPTED` durumundan çıkış: Ardışık 4 başarılı gün → `STEADY`; adaptasyon süresi bu koşul sağlanmadan dolarsa → `BOOST` (RFC-001 §3).
+`RESTART_ADAPTED` durumundan çıkış: Ardışık 4 başarılı gün → `STEADY`; toparlanma penceresi bu koşul sağlanmadan dolarsa → `BOOST` (RFC-001 §3).
+
+**Toparlanma Penceresi:** `adaptation_expires_at`, adaptasyon eyleminin bitişi + 5 gün olarak yazılır. Örneğin `SCHOOL_EXAMS` için dondurma bitişi + 5 gün. Dondurma süresince hedef olmadığı için başarılı gün birikemez; pencere dondurma bitişinde kapansaydı dondurulan her öğrenci otomatik olarak `BOOST`'a düşerdi. 5 gün, 4 başarılı gün ve 1 gün tolerans içindir.
 
 ---
 
@@ -110,8 +112,8 @@ stateDiagram-v2
     INTERACTED --> COMPLETED: Eylem tamamlandı
     
     VIEWED --> DISMISSED: X ile kapatıldı
-    ASSIGNED --> EXPIRED: 24 sa doldu
-    VIEWED --> EXPIRED: 24 sa doldu
+    ASSIGNED --> EXPIRED: TTL doldu
+    VIEWED --> EXPIRED: TTL doldu
     
     DISMISSED --> [*]: Backoff başlar
     COMPLETED --> [*]: Ödül / streak
@@ -124,7 +126,7 @@ stateDiagram-v2
 | `VIEWED → INTERACTED` | `CLICK_CTA` | Öğrenci kartın butonuna bastı |
 | `INTERACTED → COMPLETED` | `COMPLETE` | Kartın hedeflediği eylem (video, test, anket) tamamlandı; ödül/streak tetiklenir |
 | `VIEWED → DISMISSED` | `DISMISS` | Öğrenci kartı kapattı; backoff periyodu başlar (§5.1) |
-| `ASSIGNED / VIEWED → EXPIRED` | Gece temizlik işi | 24 saatlik TTL doldu; kart arşivlenir |
+| `ASSIGNED / VIEWED → EXPIRED` | Gece temizlik işi | TTL doldu (varsayılan 24 saat, `CHECK_IN_SURVEY` için 48 saat); kart arşivlenir |
 
 ### 5.1. Backoff Kuralları
 1. **Günde En Fazla 1 Aktif Müdahale:** Öğrenciye aynı gün içinde asla birden fazla müdahale kartı sunulmaz (`active_intervention_id` doluyken yeni kart üretilmez).
@@ -132,5 +134,9 @@ stateDiagram-v2
    * **1. Kapatma:** Sistem 24 saat boyunca yeni müdahale üretmez.
    * **2. Kapatma:** Sistem 48 saat boyunca yeni müdahale üretmez.
    * **3. Kapatma:** Sistem o öğrenci için push ve modal bildirimleri tamamen keser; müdahaleyi yalnızca ana ekranın en altında pasif bir "Tavsiye" kutusuna indirger.
-3. **Kart TTL'i:** Bir kart üretildikten sonra en fazla **24 saat** geçerlidir. 24 saat içinde tamamlanmayan kartlar gece temizlik işiyle otomatik olarak `EXPIRED` durumuna alınır.
+3. **Kart TTL'i:** Bir kart üretildikten sonra varsayılan olarak **24 saat** geçerlidir (`pulse_intervention_templates.default_duration_hours`). Tek istisna `CHECK_IN_SURVEY` kartıdır: **48 saat** geçerlidir, çünkü `RESTART_UNRESPONSIVE` eskalasyonu da 48 saat bekler; kart bu süreden önce silinseydi öğrenci yanıt veremeden "yanıtsız" sayılırdı. Süresi dolan kartlar gece temizlik işiyle `EXPIRED` durumuna alınır.
 
+4. **Sessiz Saatler:** Push bildirimleri yalnızca öğrencinin yerel saatiyle **09:00 – 21:00** arasında gönderilir (varsayılan saat dilimi `Europe/Istanbul`). Bu aralığın dışında üretilen bir kart, örneğin gece 03:00 batch'inde üretilen bir check-in kartı, uygulama içinde **hemen** görünür; yalnızca push bildirimi ertelenir:
+   * Ertelenen push'lar 09:00 – 09:30 arasına rastgele dağıtılarak gönderilir. Gece batch'i binlerce kart ürettiğinde hepsinin 09:00'da aynı anda gitmesi hem push altyapısında yük sıçraması yaratır hem de "toplu bildirim" hissi verir.
+   * Gönderim anında kart artık `ASSIGNED` veya `VIEWED` değilse (öğrenci o arada uygulamayı açıp kartı tamamladıysa ya da kartın süresi dolduysa) push iptal edilir.
+   * Aynı pencere veli SMS ve push bildirimleri için de geçerlidir (RFC-005 §6).

@@ -41,6 +41,7 @@ doping-pulse/
     ├── coaching-and-guardian-escalation.md    # RFC-005: Veli Bildirimi & Koçluk CRM Eskalasyonu
     ├── event-driven-messaging-architecture.md# RFC-006: Apache Kafka Mesajlaşma, Strict Ordering & DLQ
     ├── openapi-swagger-spec.yaml              # Canlı OpenAPI 3.0 / Swagger UI & Postman Sözleşmesi
+    ├── example-scenario-restart-journey.md    # Uçtan uca örnek senaryo: Ece'nin RESTART yolculuğu
     └── monitoring-alerting-and-slas.md        # RFC-007: Gözlemlenebilirlik, Prometheus, Grafana & SLA
 ```
 
@@ -58,6 +59,7 @@ doping-pulse/
 | **RFC-006** | [Event-Driven Altyapı](docs/event-driven-messaging-architecture.md) | Mesajlaşma (Kafka) | **Strict In-Order per Student:** Partition Key = `studentId`, fire-and-forget ile sıfır senkron bağımlılık, Transactional Outbox, transaction içi idempotent tüketici, 3x exponential backoff & DLQ. |
 | **RFC-007** | [Gözlemlenebilirlik & SLA](docs/monitoring-alerting-and-slas.md) | SRE & İzleme | **%99.95 Uptime & Sub-30ms Latency:** Prometheus durum dağılım sayaçları, Grafana dönüşüm hunileri, Sev-1 PagerDuty alarmları, %10 holdout ile uplift ölçümü. |
 | **OpenAPI** | [Swagger YAML](docs/openapi-swagger-spec.yaml) | Entegrasyon | **Etkileşimli Test:** Swagger Editor ve Postman uyumlu, tam şemalı, örnek payload'lu canlı API kontratı. |
+| **Senaryo** | [Örnek Senaryo: Ece](docs/example-scenario-restart-journey.md) | Uçtan Uca Doğrulama | **Gün gün veri izi:** Bir öğrencinin kopuşu, check-in yanıtı ve dönüşü boyunca her tabloya yazılan satırlar ve her API yanıtı. |
 
 ---
 

@@ -68,7 +68,7 @@ Format: `<domain>.<entity>.<past-tense-action>`
 | Topic Adı | Hedef Consumer'lar | Açıklama |
 | :--- | :--- | :--- |
 | `pulse.student.state_changed` | Notification Service, Analytics | Durum değiştiğinde (örn: `ACTIVATE` → `STEADY`). |
-| `pulse.intervention.assigned` | Mobile Push Gateway | Öğrenciye yeni bir mikro-görev kartı çıktığında anlık bildirim fırlatır. |
+| `pulse.intervention.assigned` | Mobile Push Gateway | Öğrenciye yeni bir kart çıktığında push bildirimini tetikler. Sessiz saatlerde (21:00 – 09:00) push ertelenir, kart uygulamada hemen görünür (RFC-004 §5.1). |
 | `pulse.escalation.triggered` | Coaching CRM, SMS Gateway | Veliye SMS veya koça alarm görevi oluşturulması gerektiğinde. |
 
 ---
