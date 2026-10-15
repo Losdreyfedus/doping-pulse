@@ -13,6 +13,15 @@
 
 **Doping Pulse**, öğrencinin platform içerisindeki çalışma davranışlarını, ritmini ve kopuş sinyallerini gerçek zamanlı ve kümülatif olarak analiz eden; öğrencinin ihtiyacına göre doğru anda nokta atışı müdahale sağlayan bir **Akıllı Karar Motorudur**.
 
+### Tasarımın Davranış Bilimi Temelleri
+
+Pulse'ın müdahale kuralları iki bulguya dayanır. Bunlar tasarımın gerekçesidir; Pulse'taki gerçek etkileri holdout deneyiyle ölçülecektir (RFC-007 §5).
+
+| İlke | Bulgu | Pulse'taki karşılığı |
+| :--- | :--- | :--- |
+| **Erteleme bir duygu düzenleme problemidir** | Erteleme çoğunlukla zaman yönetimi eksikliğinden değil, görevin yarattığı olumsuz duygudan (kaygı, sıkılma, başarısızlık korkusu) kaçınmaktan kaynaklanır (Sirois ve Pychyl, 2013). | ACTIVATE'te 4 dakikalık mikro-görev, BOOST'ta hedeflerin %40 hafifletilmesi ve hiçbir mesajda suçlayıcı dil kullanılmaması. Amaç görevi gözde küçültmek. |
+| **Başlanan iş devam ettirilmek istenir** | İnsanlar yarım bırakılan bir göreve geri dönme eğilimi gösterir (Ovsiankina etkisi). | Mikro-görev bir bitiş noktası değil, başlangıç olarak tasarlanır. Kopuştan dönen öğrenciye yarım bıraktığı videonun kalanı önerilir (RFC-004 §2.1). |
+
 ### Temel Durumlar
 1. **🟢 ACTIVATE (Harekete Geçir):** Henüz anlamlı bir çalışma davranışı göstermemiş veya sisteme yeni adapte olan öğrenci. Eşik: Çok düşük, mikrogörev odaklı ("Bugün sadece 1 video izle").
 2. **🟡 BOOST (Ritmini Güçlendir):** Çalışmaya devam eden ancak temposu düzensiz veya hedeflerinin altında kalan öğrenci. Eşik: Program hafifletme, motivasyon ve ritim adaptasyonu.
