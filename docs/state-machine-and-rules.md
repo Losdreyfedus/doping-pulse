@@ -165,6 +165,17 @@ Zaman ekseni (gün):
 | Hafta sonu çalışanı | Sadece cumartesi ve pazar ~60 dk (ort. ~17 dk/gün) | 5 | **7 gün** | Hafta içindeki normal 5 günlük boşluğunda alarm *çalmaz*, 7. sessiz günde RESTART |
 | Seyrek kullanıcı | 14 günde 2 aktif gün | — | **7 gün** (aktif gün < 4, üst sınır) | Alışkanlık yok → STEADY'den doğrudan RESTART'a geçmez; BOOST/WCR kurallarıyla izlenir. BOOST'a düştükten sonra 7. sessiz günde RESTART olur (BOOST zaten aktif bir geçmişi gösterir). |
 
+**Neden bu sayılar?**
+
+| Parametre | Değer | Gerekçe |
+| :--- | :---: | :--- |
+| Tolerans | + 2 gün | Öğrencinin her zamanki ritminden biraz sapabilmesi için. Normalde en fazla 1 gün ara veren biri bir kez 2 gün ara verirse bu henüz kopuş değildir. |
+| Alt sınır | 4 gün | Her gün çalışan bir öğrencinin de 1–2 günlük arası olur: hafta sonu, hastalık, yoğun bir okul günü. 2. günde zaten yumuşak bir adım vardır (seri bozulması, hedef hafifletme). 2–3 gün sonra "her şey yolunda mı?" diye sormak takip ediliyormuş hissi ve bildirim yorgunluğu yaratır. 4 gün, hafta sonunu da aşan anlamlı bir aradır. |
+| Üst sınır | 7 gün | Ritmi ne kadar seyrek olursa olsun hiçbir öğrencinin kopuşu bir haftadan uzun süre fark edilmeden kalmamalıdır. Bir hafta sessizlikten sonra geri dönme ihtimali düşmeye başlar. |
+| Alışkanlık şartı | ≥ 4 aktif gün, ≥ 10 dk/gün | 14 günde haftada en az 2 gün çalışmamış birinde "kopuş" kavramı anlamsızdır. 10 dakika, uygulamayı açıp kapatanları eleyen bir gürültü filtresidir. |
+
+> Bu değerler başlangıç değerleridir. Pilot veriyle kalibre edilir ve her değişiklik yeni bir deney sürümü olarak ölçülür (RFC-007 §5.4).
+
 **Performans Notu:** Hesap, `pulse_daily_aggregates` üzerinde öğrenci başına tek bir indeksli aralık sorgusudur (en fazla 14 + 7 = 21 satır). `idx_daily_aggregates_window` indeksiyle karşılanır (RFC-002 §3.2).
 
 ### 4.6. 🪜 Ters Streak Merdiveni
