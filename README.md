@@ -42,6 +42,7 @@ doping-pulse/
     ├── event-driven-messaging-architecture.md# RFC-006: Apache Kafka Mesajlaşma, Strict Ordering & DLQ
     ├── openapi-swagger-spec.yaml              # Canlı OpenAPI 3.0 / Swagger UI & Postman Sözleşmesi
     ├── example-scenario-restart-journey.md    # Uçtan uca örnek senaryo: Ece'nin RESTART yolculuğu
+    ├── segments-and-recommendations.md        # RFC-008: Statü + segment bazlı öneri matrisi
     └── monitoring-alerting-and-slas.md        # RFC-007: Gözlemlenebilirlik, Prometheus, Grafana & SLA
 ```
 
@@ -60,6 +61,7 @@ doping-pulse/
 | **RFC-007** | [Gözlemlenebilirlik & SLA](docs/monitoring-alerting-and-slas.md) | SRE & İzleme | **%99.95 Uptime & Sub-30ms Latency:** Prometheus durum dağılım sayaçları, Grafana dönüşüm hunileri, Sev-1 PagerDuty alarmları, %10 holdout ile uplift ölçümü. |
 | **OpenAPI** | [Swagger YAML](docs/openapi-swagger-spec.yaml) | Entegrasyon | **Etkileşimli Test:** Swagger Editor ve Postman uyumlu, tam şemalı, örnek payload'lu canlı API kontratı. |
 | **Senaryo** | [Örnek Senaryo: Ece](docs/example-scenario-restart-journey.md) | Uçtan Uca Doğrulama | **Gün gün veri izi:** Bir öğrencinin kopuşu, check-in yanıtı ve dönüşü boyunca her tabloya yazılan satırlar ve her API yanıtı. |
+| **RFC-008** | [Segment ve Öneriler](docs/segments-and-recommendations.md) | Kişiselleştirme | **Statü + Segment:** Sınav takvimi, öğrenme tarzı ve akademik duruma göre her statüde farklı öneri; çakışma önceliği ve konu bazlı veri modeli. |
 
 ---
 
