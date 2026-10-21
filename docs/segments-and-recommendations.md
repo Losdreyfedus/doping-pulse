@@ -30,7 +30,7 @@ Her statünün bir **temel önerisi** vardır (bugün RFC-004'te tanımlı olan)
 
 ### 🟢 ACTIVATE: Henüz başlayamamış
 
-*Temel öneri:* 4 dakikalık, düşük eşikli ilk adım.
+*Temel öneri:* Düşük eşikli ilk adım.
 
 | Segment | Öneri | Gerekçe |
 | :--- | :--- | :--- |
