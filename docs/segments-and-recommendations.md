@@ -130,10 +130,3 @@ Ece `EXAM_FAR` (YKS'ye > 120 gün), `BALANCED`, `ON_LEVEL`. Senaryodaki akış (
 
 Segment önerileri de holdout deneyiyle test edilir (RFC-007 §5). Treatment grubunun bir kısmı segment önerisi, bir kısmı sadece statü temel önerisi alır. Segmentlemenin değeri, bu iki kol arasındaki fark kadardır. Fark yoksa sistem gereksiz yere karmaşıklaştırılmamalı.
 
----
-
-## 7. Açık Sorular
-
-1. **Koçlu paket:** Koç desteği olmayan pakette koç adımları ne olacak? Ayrı bir eksen mi, yoksa sadece eskalasyon kuralı mı?
-2. **Veli ilgisi:** Veli uygulamasını aktif kullanan velinin öğrencisinde eskalasyon farklı mı olmalı?
-3. **Eksik segment:** Doping'deki öğrenciler arasında bu üç eksende yakalanamayan bir tip var mı?
